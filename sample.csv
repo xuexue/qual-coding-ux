@@ -1,0 +1,30 @@
+ID,Setting,Time,Text,Model,Apply,Both,Neither,Comment
+0,Toronto,Pre,Hello my name is Lisa,Hello my name is,,Lisa,,
+0,Toronto,Post,Hello my name is still Lisa,Hello name still,my is,,Lisa,
+0,Toronto,Delay-Post,Hello my name is still Lisa,Hello name still,my is,,Lisa,
+1,Vancouver,Pre,Hi there my name is Sam,Hi there my,name is Sam,,,
+1,Vancouver,Post,Hi there my name is still Sam,,,,,
+2,Montreal,Pre,Bonjour je m'appelle Marie,,,,,
+2,Montreal,Post,Bonjour je m'appelle toujours Marie,,,,,
+3,Calgary,Pre,Hey I'm Jordan,,,,,
+3,Calgary,Post,Hey I'm still Jordan,,,,,
+4,Ottawa,Pre,Greetings I am Alex,,,,,
+4,Ottawa,Post,Greetings I am still Alex,,,,,
+5,Halifax,Pre,Hello there I'm Taylor,,,,,
+5,Halifax,Post,Hello there I'm still Taylor,,,,,
+6,Edmonton,Pre,"Hi, my name is Morgan. Here's what I'm hoping to cover today:
+1. Background on the project
+2. Current blockers
+3. Next steps",,,,,
+6,Edmonton,Post,"Thanks for the time. To recap:
+1. We reviewed the background on the project
+2. We discussed current blockers
+3. We agreed on next steps",,,,,
+7,Winnipeg,Pre,"Hello, I'm Priya. A few things I'd like to walk through:
+1. Quick intro
+2. Goals for this session
+3. Open questions I have",,,,,
+7,Winnipeg,Post,"Wrapping up now. Summary:
+1. Did the intro
+2. Covered the goals
+3. Answered most of the open questions, a couple are still pending",,,,,

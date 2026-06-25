@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Qualitative Coding</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Qualitative Coding</h1>
+    <button id="save-btn">Save to CSV</button>
+    <span id="save-status"></span>
+  </header>
+  <div class="main">
+    <aside id="row-list"></aside>
+    <section id="editor">
+      <div id="row-meta"></div>
+      <div id="coverage-banner"></div>
+      <div class="code-buttons">
+        <button class="code-btn code-btn-Model" data-code="Model">Model <kbd>1</kbd></button>
+        <button class="code-btn code-btn-Apply" data-code="Apply">Apply <kbd>2</kbd></button>
+        <button class="code-btn code-btn-Both" data-code="Both">Both <kbd>3</kbd></button>
+        <button class="code-btn code-btn-Neither" data-code="Neither">Neither <kbd>4</kbd></button>
+        <button class="code-btn clear-btn" data-code="">Clear <kbd>0</kbd></button>
+      </div>
+      <p class="hint">Select text, then click a code button (or press 1-4, 0 to clear).</p>
+      <div id="text-display" class="text-display"></div>
+      <label for="comment-box">Comment</label>
+      <textarea id="comment-box" placeholder="Optional comment for this row…"></textarea>
+    </section>
+  </div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
