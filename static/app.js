@@ -32,6 +32,31 @@ function gapSegments(text, start, end) {
   return segs;
 }
 
+function mergeAdjacentSegments(segments) {
+  const result = [];
+  let i = 0;
+  while (i < segments.length) {
+    const seg = segments[i];
+    if (seg.type !== 'code') { result.push(seg); i++; continue; }
+    let end = seg.end;
+    let j = i + 1;
+    while (j < segments.length) {
+      // Skip over whitespace, but only if what follows is the same code
+      let k = j;
+      while (k < segments.length && segments[k].type === 'whitespace') k++;
+      if (k < segments.length && segments[k].type === 'code' && segments[k].code === seg.code) {
+        end = segments[k].end;
+        j = k + 1;
+      } else {
+        break;
+      }
+    }
+    result.push({ start: seg.start, end, type: 'code', code: seg.code });
+    i = j;
+  }
+  return result;
+}
+
 function getSegments(text, spans) {
   const sorted = spans.slice().sort((a, b) => a.start - b.start);
   const segments = [];
@@ -42,7 +67,7 @@ function getSegments(text, spans) {
     pos = Math.max(pos, sp.end);
   }
   if (pos < text.length) segments.push(...gapSegments(text, pos, text.length));
-  return segments;
+  return mergeAdjacentSegments(segments);
 }
 
 function uncoveredCount(row) {
