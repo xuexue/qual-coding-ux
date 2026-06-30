@@ -9,8 +9,8 @@ from flask import Flask, jsonify, request, send_from_directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "sample.csv")
 SIDECAR_PATH = CSV_PATH + ".spans.json"
-CODES = ["Model", "Apply", "Both", "Neither"]
-FIELDNAMES = ["ID", "Setting", "Time", "Text", *CODES, "Comment"]
+CODES = ["Model Session", "Apply Session", "Both", "Neither", "Empty/ I don't know answer"]
+FIELDNAMES = ["id", "site", "time", "response", *CODES, "Comments", "Length check"]
 
 app = Flask(__name__, static_folder=os.path.join(BASE_DIR, "static"), static_url_path="/static")
 
@@ -63,8 +63,16 @@ def spans_to_cells(text, spans):
 
 
 def read_csv_rows():
-    with open(CSV_PATH, newline="", encoding="utf-8") as f:
-        return list(csv.DictReader(f))
+    with open(CSV_PATH, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        # Handle BOM or encoding artifacts on the first column by position
+        if rows and "id" not in rows[0] and reader.fieldnames:
+            first_field = reader.fieldnames[0]
+            for row in rows:
+                if first_field in row:
+                    row["id"] = row.pop(first_field)
+        return rows
 
 
 def write_csv_rows(rows):
@@ -101,7 +109,7 @@ def get_rows():
     sidecar_rows = load_sidecar()
     result = []
     for idx, row in enumerate(rows):
-        text = row.get("Text", "")
+        text = row.get("response", "")
         cells = {code: row.get(code, "") for code in CODES}
         entry = sidecar_rows[idx] if idx < len(sidecar_rows) else None
         spans = entry.get("spans", []) if entry else []
@@ -113,11 +121,11 @@ def get_rows():
         if not cached_is_current:
             spans = reconstruct_fallback(text, cells)
         result.append({
-            "id": row.get("ID", ""),
-            "setting": row.get("Setting", ""),
-            "time": row.get("Time", ""),
+            "id": row.get("id", ""),
+            "setting": row.get("site", ""),
+            "time": row.get("time", ""),
             "text": text,
-            "comment": row.get("Comment", ""),
+            "comment": row.get("Comments", ""),
             "spans": spans,
         })
     return jsonify({"rows": result})
@@ -134,11 +142,12 @@ def post_rows():
         spans = r.get("spans", [])
         cells = spans_to_cells(text, spans)
         csv_rows.append({
-            "ID": r.get("id", ""),
-            "Setting": r.get("setting", ""),
-            "Time": r.get("time", ""),
-            "Text": text,
-            "Comment": r.get("comment", ""),
+            "id": r.get("id", ""),
+            "site": r.get("setting", ""),
+            "time": r.get("time", ""),
+            "response": text,
+            "Comments": r.get("comment", ""),
+            "Length check": "",
             **cells,
         })
         sidecar_rows.append({"text_hash": text_hash(text), "spans": spans})

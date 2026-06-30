@@ -1,8 +1,4 @@
 :root {
-  --code-Model: #ffd166;
-  --code-Apply: #06d6a0;
-  --code-Both: #6fa8dc;
-  --code-Neither: #ef8da6;
   --border: #ddd;
   --bg: #fafafa;
 }
@@ -131,10 +127,6 @@ header h1 {
   opacity: 0.6;
 }
 
-.code-btn-Model { background: var(--code-Model); }
-.code-btn-Apply { background: var(--code-Apply); }
-.code-btn-Both { background: var(--code-Both); }
-.code-btn-Neither { background: var(--code-Neither); }
 .clear-btn { background: #eee; }
 
 .hint {
@@ -156,10 +148,6 @@ header h1 {
 }
 
 .code-seg { border-radius: 3px; padding: 1px 0; }
-.code-seg.code-Model { background: var(--code-Model); }
-.code-seg.code-Apply { background: var(--code-Apply); }
-.code-seg.code-Both { background: var(--code-Both); }
-.code-seg.code-Neither { background: var(--code-Neither); }
 
 .uncovered-seg {
   text-decoration: underline wavy #d9534f;

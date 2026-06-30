@@ -1,4 +1,10 @@
-const CODES = ['Model', 'Apply', 'Both', 'Neither'];
+const CODES = ['Model Session', 'Apply Session', 'Both', 'Neither', "Empty/ I don't know answer"];
+const CODE_COLORS = ['#ffd166', '#06d6a0', '#6fa8dc', '#ef8da6', '#c9b8f0'];
+
+function codeColor(code) {
+  const i = CODES.indexOf(code);
+  return i >= 0 ? CODE_COLORS[i] : '';
+}
 
 let rows = [];
 let currentIndex = 0;
@@ -73,7 +79,8 @@ function renderText(row) {
     span.dataset.end = seg.end;
     span.textContent = row.text.slice(seg.start, seg.end);
     if (seg.type === 'code') {
-      span.className = 'code-seg code-' + seg.code;
+      span.className = 'code-seg';
+      span.style.background = codeColor(seg.code);
     } else if (seg.type === 'uncovered') {
       span.className = 'uncovered-seg';
     }
@@ -149,15 +156,31 @@ function applyPendingSelection(code) {
   assignCode(pendingSelection.start, pendingSelection.end, code);
 }
 
-document.querySelectorAll('.code-btn').forEach((btn) => {
-  btn.addEventListener('click', () => applyPendingSelection(btn.dataset.code));
-});
+function renderCodeButtons() {
+  const container = document.getElementById('code-buttons');
+  container.innerHTML = '';
+  CODES.forEach((code, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'code-btn';
+    btn.dataset.code = code;
+    btn.style.background = CODE_COLORS[i];
+    btn.innerHTML = `${code} <kbd>${i + 1}</kbd>`;
+    btn.addEventListener('click', () => applyPendingSelection(code));
+    container.appendChild(btn);
+  });
+  const clearBtn = document.createElement('button');
+  clearBtn.className = 'code-btn clear-btn';
+  clearBtn.dataset.code = '';
+  clearBtn.innerHTML = 'Clear <kbd>0</kbd>';
+  clearBtn.addEventListener('click', () => applyPendingSelection(''));
+  container.appendChild(clearBtn);
+}
 
 textDisplayEl.addEventListener('mouseup', captureSelection);
 
 document.addEventListener('keydown', (e) => {
   if (e.target === commentBoxEl) return;
-  if (e.key >= '1' && e.key <= '4') applyPendingSelection(CODES[Number(e.key) - 1]);
+  if (e.key >= '1' && e.key <= '5') applyPendingSelection(CODES[Number(e.key) - 1]);
   else if (e.key === '0' || e.key === 'Backspace' || e.key === 'Delete') applyPendingSelection('');
 });
 
@@ -196,6 +219,7 @@ saveBtnEl.addEventListener('click', async () => {
 });
 
 async function init() {
+  renderCodeButtons();
   const resp = await fetch('/api/rows');
   const data = await resp.json();
   rows = data.rows;

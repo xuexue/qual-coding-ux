@@ -17,14 +17,8 @@
     <section id="editor">
       <div id="row-meta"></div>
       <div id="coverage-banner"></div>
-      <div class="code-buttons">
-        <button class="code-btn code-btn-Model" data-code="Model">Model <kbd>1</kbd></button>
-        <button class="code-btn code-btn-Apply" data-code="Apply">Apply <kbd>2</kbd></button>
-        <button class="code-btn code-btn-Both" data-code="Both">Both <kbd>3</kbd></button>
-        <button class="code-btn code-btn-Neither" data-code="Neither">Neither <kbd>4</kbd></button>
-        <button class="code-btn clear-btn" data-code="">Clear <kbd>0</kbd></button>
-      </div>
-      <p class="hint">Select text, then click a code button (or press 1-4, 0 to clear).</p>
+      <div class="code-buttons" id="code-buttons"></div>
+      <p class="hint">Select text, then click a code button (or press 1-5, 0 to clear).</p>
       <div id="text-display" class="text-display"></div>
       <label for="comment-box">Comment</label>
       <textarea id="comment-box" placeholder="Optional comment for this row…"></textarea>
