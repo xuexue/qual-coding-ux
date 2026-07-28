@@ -26,26 +26,37 @@ def tokenize_with_offsets(text):
 def reconstruct_fallback(text, cells):
     """Best-effort span reconstruction from saved per-code strings.
 
-    Greedily matches whitespace-delimited tokens of `text`, in order, against
-    each code's own token sequence (in CODES priority order). Used only when
-    no exact sidecar spans are available for a row (e.g. after a hand-edit).
-    Chunks can be delimited by spaces or semicolons, but if the original text
-    contains semicolons, only spaces are treated as delimiters (to avoid ambiguity).
+    Matches whitespace-delimited tokens of `text`, in order, against each
+    code's own token sequence. Used only when no exact sidecar spans are
+    available for a row (e.g. after a hand-edit). Chunks can be delimited by
+    spaces or semicolons, but if the original text contains semicolons, only
+    spaces are treated as delimiters (to avoid ambiguity).
+
+    Codes are matched largest-token-count first, not in CODES order: a
+    longer piece has fewer other occurrences of its words to fall back on,
+    so if a shorter piece claimed a shared word first, the longer piece
+    could be left unable to complete its sequence at all. Claiming
+    greedily from largest to smallest avoids that. Ties fall back to CODES
+    order.
     """
     if ';' in text:
         code_tokens = {code: cells[code].split() for code in CODES}
     else:
         code_tokens = {code: cells[code].replace(';', ' ').split() for code in CODES}
-    pointers = {code: 0 for code in CODES}
+    toks_with_offsets = tokenize_with_offsets(text)
+    claimed = [False] * len(toks_with_offsets)
     spans = []
-    for start, end, tok in tokenize_with_offsets(text):
-        for code in CODES:
-            toks = code_tokens[code]
-            ptr = pointers[code]
-            if ptr < len(toks) and toks[ptr] == tok:
-                spans.append({"start": start, "end": end, "code": code})
-                pointers[code] = ptr + 1
+    for code in sorted(CODES, key=lambda c: -len(code_tokens[c])):
+        toks = code_tokens[code]
+        ptr = 0
+        for i, (start, end, tok) in enumerate(toks_with_offsets):
+            if ptr >= len(toks):
                 break
+            if not claimed[i] and toks[ptr] == tok:
+                spans.append({"start": start, "end": end, "code": code})
+                claimed[i] = True
+                ptr += 1
+    spans.sort(key=lambda s: s["start"])
     return spans
 
 
@@ -65,14 +76,25 @@ def spans_to_cells(text, spans):
 def read_csv_rows():
     with open(CSV_PATH, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        rows = list(reader)
-        # Handle BOM or encoding artifacts on the first column by position
-        if rows and "id" not in rows[0] and reader.fieldnames:
-            first_field = reader.fieldnames[0]
+        raw_rows = list(reader)
+    # Strip leading/trailing whitespace from all column names to handle
+    # Excel exports that add trailing spaces (e.g. "Both " -> "Both")
+    fieldnames = reader.fieldnames or []
+    stripped = [fn.strip() if fn else fn for fn in fieldnames]
+    needs_rename = any(orig != new for orig, new in zip(fieldnames, stripped))
+    rows = []
+    for row in raw_rows:
+        if needs_rename:
+            row = {stripped[i]: v for i, (k, v) in enumerate(row.items())}
+        rows.append(row)
+    # Handle BOM or encoding artifacts on the first column by position
+    if rows and "id" not in rows[0]:
+        first_field = stripped[0] if stripped else None
+        if first_field and first_field != "id":
             for row in rows:
                 if first_field in row:
                     row["id"] = row.pop(first_field)
-        return rows
+    return rows
 
 
 def write_csv_rows(rows):
@@ -113,9 +135,11 @@ def get_rows():
         cells = {code: row.get(code, "") for code in CODES}
         entry = sidecar_rows[idx] if idx < len(sidecar_rows) else None
         spans = entry.get("spans", []) if entry else []
+        codes_set = set(CODES)
         cached_is_current = (
             entry is not None
             and entry.get("text_hash") == text_hash(text)
+            and all(sp.get("code") in codes_set for sp in spans)
             and spans_to_cells(text, spans) == cells
         )
         if not cached_is_current:
