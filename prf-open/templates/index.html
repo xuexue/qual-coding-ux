@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PRF Qualitative Coding</title>
+  <link rel="stylesheet" href="{{ static_url('style.css') }}">
+</head>
+<body class="mode-notes">
+  <header id="topbar">
+    <form id="load-form">
+      <label title="Participant responses CSV">Data <input name="data" placeholder="responses.csv" required></label>
+      <label title="Notes CSV (created if missing)">Notes <input name="notes" placeholder="notes.csv" required></label>
+      <label title="Codebook CSV">Codebook <input name="codebook" placeholder="codebook.csv"></label>
+      <label title="Highlights JSON (default: &lt;notes&gt;_highlights.json)">Highlights <input name="highlights" placeholder="&lt;notes&gt;_highlights.json"></label>
+      <label title="Codes CSV export (default: &lt;notes&gt;_codes.csv)">Codes <input name="codes" placeholder="&lt;notes&gt;_codes.csv"></label>
+      <button type="submit">Load</button>
+      <button type="button" id="save-all" title="Write notes CSV, codes CSV and highlights JSON to the paths above">Save all</button>
+    </form>
+    <div id="mode-toggle">
+      <button data-mode="notes" class="active">Notes mode</button>
+      <button data-mode="coding">Coding mode</button>
+    </div>
+    <div id="status"></div>
+  </header>
+
+  <main id="columns">
+    <section id="col-participants" class="col">
+      <h2>Participants</h2>
+      <div class="filters">
+        <select id="filter-site"><option value="">All sites</option></select>
+        <div class="group-filter">
+          <label><input type="checkbox" value="A" checked> A</label>
+          <label><input type="checkbox" value="B" checked> B</label>
+        </div>
+        <input id="filter-search" placeholder="Search id…">
+      </div>
+      <ul id="participant-list"></ul>
+    </section>
+
+    <section id="col-responses" class="col">
+      <h2>Responses <span id="current-pid"></span></h2>
+      <div id="responses"><p class="empty">Load a data file and select a participant.</p></div>
+    </section>
+
+    <section id="col-notes" class="col">
+      <h2>Notes</h2>
+      <div id="notes"></div>
+    </section>
+
+    <section id="col-codes" class="col">
+      <div id="codebook"></div>
+    </section>
+  </main>
+
+  <script src="{{ static_url('app.js') }}"></script>
+</body>
+</html>

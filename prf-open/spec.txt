@@ -1,0 +1,117 @@
+## Spec
+
+This is the specification written for the qualitative coding web-app,
+for Claude/Cursor/etc to develop the actual web application.
+The goal of the application is to help the human qualitative coders
+in coding data in a CSV file with the following form:
+
+```
+,id,site,time,question,response
+1,SITE1-A-01,SITE1,1-Pre,discipline,An answer to the question about ML discipline
+2,SITE1-A-01,SITE1,1-Pre,questions,Participant perspective on questions they would like to ask about ML
+3,SITE1-A-01,SITE1,1-Pre,goodatml,Discussion about what it means to be good at ML
+4,SITE1-A-01,SITE1,2-Post,discipline,An answer to the question about ML discipline after the intervention
+5,SITE1-A-01,SITE1,2-Post,questions,TOdo
+6,SITE1-A-01,SITE1,2-Post,goodatml,TOdo
+7,SITE1-A-01,SITE1,3-DelayPost,discipline,An answer to the question about ML discipline after the intervention
+8,SITE1-A-01,SITE1,3-DelayPost,questions,Todo
+9,SITE1-A-01,SITE1,3-DelayPost,goodatml,Todo
+1,SITE1-A-02,SITE1,1-Pre,discipline,An answer to the question about ML discipline
+...
+1,SITE1-B-01,SITE1,1-Pre,discipline,An answer to the question about ML discipline
+...
+1,SITE2-A-01,SITE2,1-Pre,discipline,An answer to the question about ML discipline
+...
+```
+
+The actual data will not be in this repository. The app should ask for a path to open this file.
+The actual names of `SITE1`, `SITE2`, etc are different from above.
+The "A" and "B" in the "id" is meaningful, and aligns with the intervention.
+There are also rows in the CSV without an `id`. Those should not be analyzed.
+There are some participants (with ids) with only a `1-Pre` and `2-Post` answer, and missing
+a `3-DelayPost` answer. That's okay, and those rows should still be analyzed.
+These three values for `time` represent three time-points where same 3 questions
+asked.
+
+This qualitative coding app helps analyze changes to participant
+answers to the `discipline` and `goodatml` questions across the three time-points.
+The output of qualitative coding are two-folds:
+
+1. Notes in the following form. These notes are intended to capture *changes* in student
+answers in pre/post. The user should be able to load a CSV file with some of these notes already
+filled in. These CSV files may be messy, possibly containing empty rows with just the ID's filled in.
+
+```
+id, goodatml: pre->post, goodatml: pre/post->delay-post, discipline: pre->post, discipline: pre/post -> delaypost
+...
+```
+
+2. Cleaner codes following a codebook. There are two types of codes--concept codes that will
+have a time-modifier, and pattern codes. Concept codes will have three possible modifiers:
+
+- "+" indicating that the concept appeared *more* in a later response
+- "-" indicating that the concept appeared *less* in a later response
+- "=" indicating that the concept *continues to appear* in a later response
+
+Pattern codes already describe time-patterns, and do not need a modifier.
+
+The app should allow the user to load CSV files with the codes. The CSV files will look like this
+
+```
+theme,code,description`
+Describing the ML process,training,Describes teaching or training a model, ...
+...
+```
+
+All pattern codes fall under "Patterns across time".
+
+It is helpful to group codes at the "theme" level, but themes are evolving, and new codes could be added
+later, so the representation should be flexible in that way.
+
+
+The coders workflow will be as follows:
+
+- the unit of analysis is a single participant, across all timesteps.
+  we are working on just the `goodatml` and `discipline` questions.
+- first step is writing the notes based on the pre/post/delaypost results for
+  each question. It is useful to see the three (or two) answers across timesteps
+  for both questions.
+- second step is to highlight a region of either the written notes OR the initial 
+  response, and tag it with a code from the codebook.
+
+The application's interface should have four columns:
+
+1. The left most column shows the participants that could be selected.
+    Allow filtering by institution and by group "A" vs "B".
+2. The second column shows the answers to the two questions
+    for the participant selected.
+3. The next column shows the notes written for each of the four 
+   transitions, corresponding to the CSV file above (goodatml: pre->post, etc...).
+   There should be a mode associated with writing notes, where the 
+   last column is hidden.
+4. The last column, when shown, should have the list of possible codes.
+   When this is active, I would like to highlight regions of the notes/source
+   participant answer and type/select a code from the list.
+   There should be an option for "propose new code" that looks/acts like 
+   a code, but just stores the fact that none of the existing codes
+   "work". I should also see a preview of which code got added where,
+   e.g., codes appearing under "goodatml: pre->post"
+
+
+SAVING AND EXPORTING:
+
+1. For the notes, I would like to be able to write/overwrite the csv file,
+   in the same format shown above, (goodatml: pre->post, ... etc)
+2. For the codes, I would like to be able to export in the same CSV file format
+   as above, with a semicolonseparated list of codes, e.g., 
+
+```
+id, goodatml: pre->post, goodatml: pre/post->delay-post, discipline: pre->post, discipline: pre/post -> delaypost
+SITE1-A-01, +training;+building, =training, +societal-impact, return-to-pre
+...
+```
+
+3. Also, should be able to save a .json format with more information about the
+   specific highlights corresponding to each code occurrence. This json file should
+   be loadable alongside the various csv files to resume coding.
+
