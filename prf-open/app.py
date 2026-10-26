@@ -180,12 +180,15 @@ def load_data(path):
         response = row[idx["response"]] if idx["response"] < len(row) else ""
         prev = p["responses"][question].get(time)
         p["responses"][question][time] = f"{prev}\n\n{response}" if prev else response
-    # Without a later time point there's no change to code, so hide Pre-only participants.
-    # (Their rows in the notes file are still preserved by write_notes.)
+    # Coding is about change from Pre, so show only participants with a Pre answer and at
+    # least one later answer. (Hidden participants' notes rows are still kept by write_notes.)
+    def has(p, pred):
+        return any(pred(t) and text.strip()
+                   for answers in p["responses"].values() for t, text in answers.items())
+
     state["participants"] = {
         pid: p for pid, p in participants.items()
-        if any(t != "1-Pre" and text.strip()
-               for answers in p["responses"].values() for t, text in answers.items())
+        if has(p, lambda t: t == "1-Pre") and has(p, lambda t: t != "1-Pre")
     }
 
 

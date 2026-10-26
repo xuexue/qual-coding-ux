@@ -6,6 +6,8 @@ const S = {
   mode: "notes",       // "notes" | "coding"
   selection: null,     // {source, field, start, end, text}
   transition: "",      // note transition the pending selection will be coded under
+  analysis: { key: null, mod: "" },  // analysis mode: selected code key and modifier filter
+  closedThemes: new Set(),           // codebook themes the user collapsed
 };
 
 const NOTE_ORDER = ["goodatml_pp", "goodatml_pd", "discipline_pp", "discipline_pd"];
@@ -146,39 +148,149 @@ function renderAll() {
   renderResponses();
   renderNotes();
   renderCodebook();
+  renderProposals();
+  renderAnalysisPanel();
 }
 
 function annotationsFor(pid) {
   return S.data ? S.data.annotations.filter((a) => a.participant_id === pid) : [];
 }
 
-function renderParticipants() {
-  const list = $("#participant-list");
-  if (!S.data) return;
+/** Participants passing the site / group / id filters (the "selection" for analysis counts). */
+function filteredParticipants() {
+  if (!S.data) return [];
   const site = $("#filter-site").value;
   const groups = [...document.querySelectorAll(".group-filter input:checked")].map((i) => i.value);
   const q = $("#filter-search").value.trim().toLowerCase();
-  const items = S.data.participants
+  return S.data.participants
     .filter((p) => !site || p.site === site)
     .filter((p) => groups.includes(p.group) || (p.group !== "A" && p.group !== "B"))
-    .filter((p) => !q || p.id.toLowerCase().includes(q))
-    .map((p) => {
+    .filter((p) => !q || p.id.toLowerCase().includes(q));
+}
+
+function renderParticipants() {
+  const list = $("#participant-list");
+  if (!S.data) return;
+  let ps = filteredParticipants();
+  const ak = S.mode === "analysis" ? S.analysis.key : null;
+  if (ak) ps = ps.filter((p) => analysisMatches(p.id).length);
+  const items = ps.map((p) => {
+    let badges;
+    if (ak) {
+      // Modifier breakdown of the selected code for this participant, e.g. "+2 =1".
+      const counts = countBy(analysisMatches(p.id), (a) => a.modifier || "·");
+      badges = Object.entries(counts).map(([m, n]) =>
+        el("span", { class: "badge mod-badge", title: `${n}× ${m === "·" ? "(no modifier)" : m}` },
+          `${m === "-" ? "−" : m === "·" ? "✓" : m}${n > 1 ? n : ""}`));
+    } else {
       const notes = S.data.notes[p.id] || {};
       const expected = expectedNoteKeys(p);
       const nNotes = expected.filter((k) => (notes[k] || "").trim()).length;
       const nCodes = annotationsFor(p.id).length;
-      return el("li", {
-        class: p.id === S.pid ? "selected" : "",
-        onclick: () => selectParticipant(p.id),
-      },
-        el("span", { class: "pid" }, p.id),
-        el("span", { class: "badges" },
-          el("span", { class: "badge" + (nNotes === expected.length ? " done" : ""), title: "notes written" },
-            `${nNotes}/${expected.length}`),
-          el("span", { class: "badge" + (nCodes ? " done" : ""), title: "codes applied" }, `${nCodes}c`)));
-    });
+      badges = [
+        el("span", { class: "badge" + (nNotes === expected.length ? " done" : ""), title: "notes written" },
+          `${nNotes}/${expected.length}`),
+        el("span", { class: "badge" + (nCodes ? " done" : ""), title: "codes applied" }, `${nCodes}c`),
+      ];
+    }
+    return el("li", {
+      class: p.id === S.pid ? "selected" : "",
+      onclick: () => selectParticipant(p.id),
+    },
+      el("span", { class: "pid" }, p.id),
+      el("span", { class: "badges" }, ...badges));
+  });
   list.replaceChildren(...items);
-  if (!items.length) list.append(el("li", { class: "empty" }, "No participants match."));
+  if (!items.length) list.append(el("li", { class: "empty" }, ak ? "No participants with this code." : "No participants match."));
+}
+
+// ------------------------------------------------------------ analysis
+
+/** Identity of a code across annotations and the codebook. */
+function codeKey(theme, code) {
+  return code === S.data.proposeCode ? code : `${theme}|${code}`;
+}
+
+function countBy(items, fn) {
+  const out = {};
+  for (const x of items) {
+    const k = fn(x);
+    out[k] = (out[k] || 0) + 1;
+  }
+  return out;
+}
+
+/** The selected code's applications for one participant (respecting the modifier filter). */
+function analysisMatches(pid) {
+  const { key, mod } = S.analysis;
+  return annotationsFor(pid).filter((a) =>
+    codeKey(a.theme, a.code) === key && (!mod || a.modifier === mod));
+}
+
+/** Annotations of participants in the current filter selection. */
+function selectionAnnotations() {
+  const ids = new Set(filteredParticipants().map((p) => p.id));
+  return S.data.annotations.filter((a) => ids.has(a.participant_id));
+}
+
+function selectAnalysisCode(key) {
+  S.analysis.key = S.analysis.key === key ? null : key;
+  S.analysis.mod = "";
+  renderAll();
+}
+
+function renderAnalysisPanel() {
+  const box = $("#analysis-panel");
+  if (!S.data || S.mode !== "analysis") return;
+  const { key, mod } = S.analysis;
+  const nSel = filteredParticipants().length;
+  if (!key) {
+    box.replaceChildren(el("div", { class: "empty" },
+      `Click a code to see where it appears. Counts are within the current selection (${nSel} participants).`));
+    return;
+  }
+  const isProp = key === S.data.proposeCode;
+  const entry = isProp ? null : S.data.codebook.find((c) => codeKey(c.theme, c.code) === key);
+  const [theme, name] = isProp ? ["", S.data.proposeLabel]
+    : entry ? [entry.theme, entry.code] : [key.slice(0, key.indexOf("|")), key.slice(key.indexOf("|") + 1)];
+  const color = colorFor(theme, isProp ? key : name);
+  const all = selectionAnnotations().filter((a) => codeKey(a.theme, a.code) === key);
+  const anns = all.filter((a) => !mod || a.modifier === mod);
+  const pids = new Set(anns.map((a) => a.participant_id));
+  const group = (pid) => (S.data.participants.find((p) => p.id === pid) || {}).group || "?";
+  const byGroupTimes = countBy(anns, (a) => group(a.participant_id));
+  const byGroupPeople = countBy([...pids], group);
+  const byMod = countBy(all, (a) => a.modifier);
+  const byTransition = countBy(anns, (a) => a.transition);
+
+  const modButtons = (entry && entry.kind === "pattern") || isProp ? null :
+    el("div", { class: "mod-filter" },
+      ...["", "+", "-", "="].map((m) => el("button", {
+        class: m === mod ? "active" : "",
+        onclick: () => { S.analysis.mod = m; renderAll(); },
+      }, m === "" ? `all ${all.length}` : `${m === "-" ? "−" : m} ${byMod[m] || 0}`)));
+
+  const table = el("table", { class: "stats" },
+    el("tr", {}, el("th", {}, ""), el("th", {}, "times"), el("th", {}, "participants")),
+    ...["A", "B", ...Object.keys(byGroupTimes).filter((g) => g !== "A" && g !== "B")].map((g) =>
+      el("tr", {}, el("td", {}, `Group ${g}`), el("td", {}, String(byGroupTimes[g] || 0)),
+        el("td", {}, String(byGroupPeople[g] || 0)))),
+    el("tr", { class: "total" }, el("td", {}, "Total"), el("td", {}, String(anns.length)),
+      el("td", {}, String(pids.size))));
+
+  const transitions = el("ul", { class: "transition-counts" },
+    ...NOTE_ORDER.filter((k) => byTransition[k]).map((k) =>
+      el("li", {}, el("span", {}, S.data.noteColumns[k]), el("strong", {}, String(byTransition[k])))));
+
+  box.replaceChildren(
+    el("div", { class: "analysis-head" },
+      el("span", { class: "ann-code" + (isProp ? " proposal-code" : ""), style: `--strong:${color[0]};--tint:${color[1]}` }, name),
+      el("button", { class: "del", title: "Clear", onclick: () => selectAnalysisCode(key) }, "×")),
+    entry && entry.description ? el("div", { class: "desc" }, entry.description) : null,
+    modButtons,
+    table,
+    transitions,
+    el("div", { class: "where" }, `Within current selection of ${nSel} participants.`));
 }
 
 /** Note transitions that apply: the delay-post ones only if there is a delay-post answer. */
@@ -329,9 +441,13 @@ function renderHighlighted(container, text, anns, pending = null) {
     const top = withMod[withMod.length - 1];
     const line = top ? `;border-bottom:${top.a.modifier === "=" ? "3px double" : `2px ${top.a.modifier === "-" ? "dotted" : "solid"}`} ${colorFor(top.a.theme, top.a.code)[0]}` : "";
     const hasProposal = cover.some((x) => x.a.code === S.data.proposeCode);
+    // Analysis mode: fade highlights that aren't the selected code.
+    const { key: ak, mod: am } = S.analysis;
+    const dim = S.mode === "analysis" && ak &&
+      !cover.some((x) => codeKey(x.a.theme, x.a.code) === ak && (!am || x.a.modifier === am));
     container.append(el("span", {
       class: "hl" + (cover.length > 1 ? " multi" : "") + (isPending ? " pending" : "") +
-        (mods ? " has-mod" : "") + (hasProposal ? " proposal" : ""),
+        (mods ? " has-mod" : "") + (hasProposal ? " proposal" : "") + (dim ? " dim" : ""),
       style: `background:${bg}` + line + (mods ? `;--mark:${markColor}` : ""),
       ...(mods ? { "data-mods": mods } : {}),
       title: cover.map((x) => x.a.full_code + (x.a.comment ? ` — ${x.a.comment}` : "")).join("\n"),
@@ -345,8 +461,9 @@ function renderHighlighted(container, text, anns, pending = null) {
 function renderCodebook() {
   const box = $("#codebook");
   if (!S.data) return;
-  if (S.renderedCodebook === S.data.codebook) return; // static list; keep collapsed/expanded state
-  S.renderedCodebook = S.data.codebook;
+  const analysis = S.mode === "analysis";
+  // Counts of each code within the current selection (analysis mode only).
+  const counts = analysis ? countBy(selectionAnnotations(), (a) => codeKey(a.theme, a.code)) : null;
 
   const themes = new Map();
   for (const c of S.data.codebook) {
@@ -357,20 +474,88 @@ function renderCodebook() {
     box.replaceChildren(el("p", { class: "empty" }, "No codebook loaded."));
     return;
   }
-  box.replaceChildren(...[...themes.entries()].map(([theme, codes]) =>
-    el("details", { class: "theme", open: "" },
-      el("summary", {}, themeDot(colorFor(theme)), theme || "(no theme)"),
-      el("div", { class: "code-list" }, ...codes.map(codeChip)))));
+  const sections = [...themes.entries()].map(([theme, codes]) => {
+    const d = el("details", { class: "theme" },
+      el("summary", {}, themeDot(colorFor(theme)), theme || "(no theme)",
+        counts ? el("span", { class: "count" }, ` ${codes.reduce((s, c) => s + (counts[codeKey(c.theme, c.code)] || 0), 0)}`) : null),
+      el("div", { class: "code-list" }, ...codes.map((c) => codeChip(c, counts))));
+    d.open = !S.closedThemes.has(theme);
+    d.addEventListener("toggle", () => {
+      if (d.open) S.closedThemes.delete(theme); else S.closedThemes.add(theme);
+    });
+    return d;
+  });
+  if (analysis) {
+    const n = counts[S.data.proposeCode] || 0;
+    sections.push(el("div", { class: "code-list" },
+      el("button", {
+        class: "code-chip propose-chip" + (S.analysis.key === S.data.proposeCode ? " selected" : ""),
+        onclick: () => selectAnalysisCode(S.data.proposeCode),
+      }, S.data.proposeLabel, el("span", { class: "chip-count" }, String(n)))));
+  }
+  box.replaceChildren(...sections);
 }
 
-/** A code in the codebook column: description on hover; click opens the popup for it. */
-function codeChip(c) {
+/** All "propose new code" applications, across participants, grouped by description. */
+function renderProposals() {
+  const box = $("#proposals");
+  if (!S.data) return;
+  const props = S.data.annotations.filter((a) => a.code === S.data.proposeCode);
+  if (!props.length) {
+    box.replaceChildren();
+    return;
+  }
+  const groups = new Map();
+  for (const a of props) {
+    const key = (a.comment || "").trim() || "(no description)";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(a);
+  }
+  const sorted = [...groups.entries()].sort((x, y) => y[1].length - x[1].length || x[0].localeCompare(y[0]));
+  box.replaceChildren(
+    el("details", { class: "theme proposals", open: "" },
+      el("summary", {}, "Proposed codes", el("span", { class: "count" }, ` ${props.length}`)),
+      ...sorted.map(([desc, anns]) =>
+        el("div", { class: "proposal-group" },
+          el("div", { class: "proposal-desc" }, desc, el("span", { class: "count" }, ` ×${anns.length}`)),
+          el("ul", {}, ...anns.map((a) =>
+            el("li", {
+              class: a.participant_id === S.pid ? "current" : "",
+              title: `“${a.text}”\n${fieldLabel(a)} → ${S.data.noteColumns[a.transition] || ""}`,
+              onclick: () => jumpToAnnotation(a),
+            },
+              el("span", { class: "pid" }, a.participant_id),
+              el("span", { class: "snippet" }, a.text))))))));
+}
+
+function jumpToAnnotation(a) {
+  if (S.pid !== a.participant_id) selectParticipant(a.participant_id);
+  const span = [...document.querySelectorAll(".hl")].find((s) => s.dataset.ann.split(" ").includes(a.annotation_id));
+  if (span) {
+    span.scrollIntoView({ block: "center", behavior: "smooth" });
+    flash(a.annotation_id, true);
+    setTimeout(() => flash(a.annotation_id, false), 1500);
+  }
+}
+
+/**
+ * A code in the codebook column: description on hover. Coding mode: click opens the popup
+ * for it. Analysis mode: shows its count in the selection; click selects it for analysis.
+ */
+function codeChip(c, counts = null) {
   const [strong, tint] = colorFor(c.theme, c.code);
+  const key = codeKey(c.theme, c.code);
+  const n = counts ? counts[key] || 0 : null;
   return el("button", {
-    class: `code-chip ${c.kind}`,
+    class: `code-chip ${c.kind}` + (counts && S.analysis.key === key ? " selected" : "") +
+      (counts && !n ? " zero" : ""),
     style: `--strong:${strong};--tint:${tint}`,
     title: c.description || c.code,
     onclick: () => {
+      if (S.mode === "analysis") {
+        selectAnalysisCode(key);
+        return;
+      }
       if (!S.selection) {
         setStatus("Highlight some text first.", true);
         return;
@@ -378,7 +563,7 @@ function codeChip(c) {
       const mark = document.querySelector(".pending");
       openCodePopup(mark ? mark.getBoundingClientRect() : null, c.code);
     },
-  }, c.code);
+  }, c.code, counts ? el("span", { class: "chip-count" }, String(n)) : null);
 }
 
 async function applyCode(code, modifier = "") {
@@ -430,9 +615,12 @@ function fieldLabel(a) {
 function annotationList(pid, transition) {
   const anns = annotationsFor(pid).filter((a) => a.transition === transition);
   if (!anns.length) return null;
+  const { key: ak, mod: am } = S.analysis;
+  const dim = (a) => S.mode === "analysis" && ak &&
+    !(codeKey(a.theme, a.code) === ak && (!am || a.modifier === am));
   return el("ul", { class: "annotation-list" }, ...anns.map((a) =>
     el("li", {
-      class: a._stale ? "stale" : "",
+      class: (a._stale ? "stale" : "") + (dim(a) ? " dim" : ""),
       title: `“${a.text}”\n(${fieldLabel(a)})` + (a._stale ? "\ntext no longer found" : ""),
       onmouseenter: () => flash(a.annotation_id, true),
       onmouseleave: () => flash(a.annotation_id, false),
@@ -505,7 +693,7 @@ function offsetIn(container, node, offset) {
 }
 
 function captureSelection() {
-  if (S.mode !== "coding" || !S.pid) return;
+  if (S.mode === "notes" || !S.pid) return;  // coding and analysis modes both allow coding
   const sel = window.getSelection();
   if (!sel.rangeCount || sel.isCollapsed) return;
   const range = sel.getRangeAt(0);
@@ -791,9 +979,17 @@ function bindEvents() {
   });
   document.querySelectorAll("#mode-toggle button").forEach((b) =>
     b.addEventListener("click", () => setMode(b.dataset.mode)));
-  $("#filter-site").addEventListener("change", renderParticipants);
-  $("#filter-search").addEventListener("input", renderParticipants);
-  document.querySelectorAll(".group-filter input").forEach((i) => i.addEventListener("change", renderParticipants));
+  // Filters define the "selection": analysis counts follow them.
+  const onFilter = () => {
+    renderParticipants();
+    if (S.mode === "analysis") {
+      renderCodebook();
+      renderAnalysisPanel();
+    }
+  };
+  $("#filter-site").addEventListener("change", onFilter);
+  $("#filter-search").addEventListener("input", onFilter);
+  document.querySelectorAll(".group-filter input").forEach((i) => i.addEventListener("change", onFilter));
   document.addEventListener("mouseup", (ev) => {
     if (ev.target.closest(".codable")) setTimeout(captureSelection, 0);
   });

@@ -115,3 +115,16 @@ SITE1-A-01, +training;+building, =training, +societal-impact, return-to-pre
    specific highlights corresponding to each code occurrence. This json file should
    be loadable alongside the various csv files to resume coding.
 
+
+
+ANALYSIS MODE
+
+There should be another mode that lets me click on a code, and see all the IDS (left)
+where the code appears, either as a +/-/=. This is both for verification (I may want to make
+further edits) AND for analysis (I want to better-understand the way the code appears).
+In this mode, I also want to see the number of times a code appeared in a group.
+The filtering functionality should still be active, i.e., I may still want to only
+select a certain site/group: I will want to see the number of times appeared in the selection
+(not globally overall)
+
+
