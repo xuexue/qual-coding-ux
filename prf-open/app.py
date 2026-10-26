@@ -56,7 +56,7 @@ DEFAULT_DATA_DIR = (APP_DIR / ".." / "ml-prf-data" / "qual").resolve()
 DEFAULT_PATHS = {
     "data": DEFAULT_DATA_DIR / "qual_participant_view.csv",
     "notes": DEFAULT_DATA_DIR / "lisa_utm_utsg_open.csv",
-    "codebook": DEFAULT_DATA_DIR / "open_codebook_oct25.csv",
+    "codebook": DEFAULT_DATA_DIR / "open_codebook_oct26.csv",
 }
 
 # In-memory state. The source of truth on disk is the CSV files the user picks.

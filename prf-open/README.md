@@ -7,7 +7,7 @@ A Flask app implementing `spec.txt`.
 ```
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python app.py          # http://127.0.0.1:5000
+python app.py          # http://127.0.0.1:5001
 ```
 
 ## Files
