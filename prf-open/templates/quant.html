@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PRF Quant Analysis</title>
+  <link rel="stylesheet" href="{{ static_url('style.css') }}">
+  <link rel="stylesheet" href="{{ static_url('analysis.css') }}">
+  <link rel="stylesheet" href="{{ static_url('cooccurrence.css') }}">
+</head>
+<body class="analysis-page quant-page">
+  <header id="topbar">
+    {% include "_files_form.html" %}
+    <a class="page-link" href="/analysis" title="Read the quotes behind a code">← Analysis</a>
+    <a class="page-link" href="/" title="Back to the coding app">Coding app</a>
+    <div id="status"></div>
+  </header>
+
+  <main id="q-columns">
+    <section id="q-filters" class="col">
+      <h2>Participants</h2>
+      <div class="filters">
+        <select id="filter-site"><option value="">All sites</option></select>
+        <div class="group-filter">
+          <label><input type="checkbox" value="A" checked> A</label>
+          <label><input type="checkbox" value="B" checked> B</label>
+        </div>
+        <input id="filter-search" placeholder="Search id…">
+      </div>
+      <div id="selection-n" class="where"></div>
+    </section>
+
+    <section id="q-main" class="col">
+      <div class="q-controls">
+        <div class="q-control"><span class="small">Transition</span><span class="seg" id="ctl-trans"></span></div>
+        <div class="q-control"><span class="small">Group</span><span class="seg" id="ctl-group"></span></div>
+        <div class="q-control"><span class="small">Codes</span><span class="seg" id="ctl-mods"></span></div>
+        <div class="q-control"><span class="small">Show</span><span class="seg" id="ctl-measure"></span></div>
+        <div id="legend"></div>
+      </div>
+      <p id="q-explain" class="where"></p>
+      <div id="matrix-wrap"><p class="empty">Loading…</p></div>
+    </section>
+  </main>
+
+  <div id="q-tip" hidden></div>
+
+  <script src="{{ static_url('common.js') }}"></script>
+  <script src="{{ static_url('codes.js') }}"></script>
+  <script src="{{ static_url('cooccurrence.js') }}"></script>
+</body>
+</html>

@@ -743,6 +743,12 @@ def analysis_page():
     return render_template("analysis.html")
 
 
+@app.route("/quant")
+def quant_page():
+    """Co-occurrence between codes (spec.txt, QUANT ANALYSIS MODE); uses the analysis files."""
+    return render_template("quant.html")
+
+
 @app.route("/api/analysis/state", methods=["GET"])
 def analysis_state():
     return jsonify(analysis_snapshot())

@@ -1,7 +1,7 @@
 /* Analysis page (templates/analysis.html); builds on style.css. */
 
-#page-link { flex: none; font-size: 12px; color: #2d5d8a; text-decoration: none; }
-#page-link:hover { text-decoration: underline; }
+#page-link, .page-link { flex: none; font-size: 12px; color: #2d5d8a; text-decoration: none; }
+#page-link:hover, .page-link:hover { text-decoration: underline; }
 
 .analysis-page #load-form { flex-direction: column; align-items: stretch; gap: 3px; }
 .form-row { display: flex; gap: 8px; align-items: center; min-width: 0; }

@@ -14,23 +14,15 @@ const A = {
   hits: new Map(),   // fc -> pid -> {pp: Set(coderIdx), pd: Set(coderIdx)}
 };
 
-const TRANS = { pp: "Pre → Post", pd: "Pre/Post → Delay-post" };
+// GROUPS, TRANS, tkind, modLabel and the code index / participant filters live in codes.js.
 const TRANS_TIMES = { pp: ["1-Pre", "2-Post"], pd: ["1-Pre", "2-Post", "3-DelayPost"] };
-const GROUPS = ["A", "B"];
 // The four numbers in a code row, left to right: [group, transition].
 const CELLS = [["A", "pp"], ["B", "pp"], ["A", "pd"], ["B", "pd"]];
 const cellLabel = (g, k) => `Group ${g}, ${TRANS[k]}`;
 
-// One colour per coder: [strong, tint]. Highlights in the detail view show a single code,
-// so colour only ever means "which coder".
-const CODER_PALETTE = [
-  ["#1f6fb2", "#cfe2f3"], ["#c45f00", "#fde0c2"], ["#2e8b57", "#cdeccf"],
-  ["#7b4fb3", "#e2d5f3"], ["#b8396f", "#f8d3e3"], ["#11807f", "#c6ecec"],
-];
-const coderColor = (i) => CODER_PALETTE[i % CODER_PALETTE.length];
+// Coder colours (coderColor) and the files form are in codes.js too. Highlights in the detail
+// view show a single code, so colour only ever means "which coder".
 
-const tkind = (transition) => (transition.endsWith("_pd") ? "pd" : "pp");
-const modLabel = (fc) => fc.replace(/^-/, "−");
 const isSel = (fc, k, g) => !!A.sel && A.sel.fc === fc && (!k || A.sel.k === k) && (!g || A.sel.g === g);
 
 /** The saved summary for a code, transition and group ({} if none). */
@@ -43,70 +35,18 @@ const summaryText = (fc, k, g) => summaryOf(fc, k, g).summary || "";
 
 async function init() {
   bindEvents();
-  const snap = await api("GET", "/api/analysis/state");
-  if (snap.coders.length) {
-    fillForm(snap.paths);
-    applySnapshot(snap);
-  } else {
-    // Nothing loaded on the server yet: load the last-used (or default) files right away.
-    fillForm(await api("GET", "/api/analysis/last-session"));
-    await loadFromForm();
-  }
+  const opened = await openingSnapshot();
+  if (!opened) return;
+  applySnapshot(opened.snap);
+  if (opened.fresh) setStatus(...loadedMessage(opened.snap, A.recoded));
 }
 
-function fillForm(paths) {
-  const f = $("#load-form").elements;
-  for (const k of ["data", "codebook", "summary"]) {
-    if (paths[k]) { f[k].value = paths[k]; showPathEnd(f[k]); }
-  }
-  document.querySelectorAll(".coder-field").forEach((n) => n.remove());
-  const hl = paths.highlights && paths.highlights.length ? paths.highlights : [""];
-  hl.forEach((p) => addCoderField(p));
-}
-
-function addCoderField(value = "") {
-  const input = el("input", { class: "coder-input", placeholder: "coder_highlights.json" });
-  input.value = value;
-  const label = el("label", { class: "coder-field" }, el("span", { class: "coder-name" }), input);
-  $("#coder-fields").insertBefore(label, $("#add-coder"));
-  addBrowseButton(input, "a coder's highlights JSON");
-  label.append(el("button", {
-    type: "button", class: "del", title: "Remove this coder",
-    onclick: () => { label.remove(); numberCoderFields(); },
-  }, "×"));
-  showPathEnd(input);
-  numberCoderFields();
-  return input;
-}
-
-function numberCoderFields() {
-  document.querySelectorAll(".coder-field").forEach((l, i) => {
-    const name = l.querySelector(".coder-name");
-    name.textContent = `Coder ${i + 1}`;
-    name.style.color = coderColor(i)[0];
-  });
-}
-
-async function onLoad(ev) {
-  ev.preventDefault();
-  await loadFromForm();
-}
-
+/** Load button: reload the files in the form. */
 async function loadFromForm() {
   await flushSummary();
-  const f = $("#load-form").elements;
   try {
-    const snap = await api("POST", "/api/analysis/load", {
-      data: f.data.value, codebook: f.codebook.value, summary: f.summary.value,
-      highlights: [...document.querySelectorAll(".coder-input")].map((i) => i.value),
-    });
-    applySnapshot(snap);
-    const nAnn = snap.coders.reduce((s, c) => s + c.annotations.length, 0);
-    const noNotes = snap.coders.filter((c) => !c.notes_source).map((c) => c.name);
-    setStatus(`Loaded ${snap.participants.length} participants, ${snap.coders.length} coders, ${nAnn} code applications.` +
-      (A.recoded ? ` ${A.recoded} merged or pattern code(s) shown under their new name.` : "") +
-      (noNotes.length ? ` No notes found for ${noNotes.join(", ")}: re-save their highlights with the coding app.` : ""),
-      noNotes.length > 0);
+    applySnapshot(await loadFilesFromForm());
+    setStatus(...loadedMessage(A.data, A.recoded));
   } catch (e) {
     setStatus(e.message, true);
   }
@@ -115,12 +55,8 @@ async function loadFromForm() {
 function applySnapshot(snap) {
   A.data = snap;
   A.participants = new Map(snap.participants.map((p) => [p.id, p]));
-  buildIndex();
-  const sites = [...new Set(snap.participants.map((p) => p.site))].sort();
-  const sel = $("#filter-site");
-  const cur = sel.value;
-  sel.replaceChildren(el("option", { value: "" }, "All sites"), ...sites.map((s) => el("option", { value: s }, s)));
-  sel.value = sites.includes(cur) ? cur : "";
+  Object.assign(A, buildCodeIndex(snap, A.participants));
+  fillSiteFilter(snap.participants);
   // The selection survives reloads via the URL hash, e.g. #pd:B:+training.
   const m = decodeURIComponent(location.hash.slice(1)).match(/^(pp|pd):(A|B):(.+)$/);
   if (!(A.sel && A.rowByFc.has(A.sel.fc))) A.sel = m && A.rowByFc.has(m[3]) ? { fc: m[3], k: m[1], g: m[2] } : null;
@@ -128,94 +64,10 @@ function applySnapshot(snap) {
   renderAll();
 }
 
-/**
- * Rewrite codes for display (the coders' files are not changed): apply CODE_MERGES from
- * app.py (old name -> new name, keeping the modifier), then drop the modifier from pattern
- * codes ("+return-to-pre" -> "return-to-pre"). The original is kept in a.original_code.
- * Returns how many applications changed.
- */
-function normalizeCodes(coders, codebook, merges) {
-  const concept = new Set(codebook.filter((c) => c.kind !== "pattern").map((c) => c.code));
-  const patterns = new Set(codebook.filter((c) => c.kind === "pattern" && !concept.has(c.code)).map((c) => c.code));
-  const target = (code) => {
-    const seen = new Set();
-    while (merges[code] && !seen.has(code)) { seen.add(code); code = merges[code]; }  // follow chains
-    return code;
-  };
-  let changed = 0;
-  for (const coder of coders) {
-    for (const a of coder.annotations) {
-      if (a.code === A.data.proposeCode) continue;
-      const code = target(a.code);
-      const modifier = patterns.has(code) ? "" : a.modifier;
-      if (code === a.code && modifier === a.modifier) continue;
-      a.original_code = a.full_code;
-      a.code = code;
-      a.modifier = modifier;
-      a.full_code = modifier + code;
-      changed++;
-    }
-  }
-  return changed;
-}
-
-/** Code rows in display order, and which participant/transition each coder gave each code. */
-function buildIndex() {
-  const { codebook, coders, proposeCode, proposeLabel } = A.data;
-  A.rows = [];
-  A.rowByFc = new Map();
-  const addRow = (r) => {
-    if (A.rowByFc.has(r.fc)) return;
-    A.rows.push(r);
-    A.rowByFc.set(r.fc, r);
-  };
-  for (const c of codebook) {
-    for (const m of c.kind === "pattern" ? [""] : ["+", "-", "="]) {
-      addRow({ ...c, fc: m + c.code, modifier: m, group: c.theme || "(no theme)" });
-    }
-  }
-  A.recoded = normalizeCodes(coders, codebook, A.data.codeMerges || {});
-  A.hits = new Map();
-  const extras = [];
-  coders.forEach((coder, ci) => {
-    for (const a of coder.annotations) {
-      if (!A.participants.has(a.participant_id) || !a.transition) continue;
-      const fc = a.full_code;
-      if (!A.rowByFc.has(fc) && a.code !== proposeCode && !extras.some((r) => r.fc === fc)) {
-        extras.push({ fc, code: a.code, modifier: a.modifier, theme: a.theme, kind: a.modifier ? "concept" : "pattern",
-          description: a.theme ? `Theme when coded: ${a.theme}` : "", group: "Not in current codebook" });
-      }
-      const byPid = A.hits.get(fc) || new Map();
-      A.hits.set(fc, byPid);
-      const h = byPid.get(a.participant_id) || { pp: new Set(), pd: new Set() };
-      byPid.set(a.participant_id, h);
-      h[tkind(a.transition)].add(ci);
-    }
-  });
-  extras.sort((x, y) => x.code.localeCompare(y.code) || x.fc.localeCompare(y.fc)).forEach(addRow);
-  addRow({ fc: proposeLabel, code: proposeCode, modifier: "", theme: "", kind: "proposal",
-    description: "Highlights where no existing code fit", group: "Proposed new codes" });
-  A.themeColors = buildThemeColors(codebook);
-}
-
 // ------------------------------------------------------------ selection & counts
 
-/** Participants passing the site / group / id filters, A before B. */
 function filteredParticipants() {
-  if (!A.data) return [];
-  const site = $("#filter-site").value;
-  const groups = [...document.querySelectorAll(".group-filter input:checked")].map((i) => i.value);
-  const q = $("#filter-search").value.trim().toLowerCase();
-  const rank = (g) => (GROUPS.includes(g) ? GROUPS.indexOf(g) : GROUPS.length);
-  return A.data.participants
-    .filter((p) => !site || p.site === site)
-    .filter((p) => groups.includes(p.group) || !GROUPS.includes(p.group))
-    .filter((p) => !q || p.id.toLowerCase().includes(q))
-    .sort((x, y) => rank(x.group) - rank(y.group) || x.id.localeCompare(y.id));
-}
-
-function hasDelayPost(p) {
-  return A.data.questions.some((q) => ((p.responses[q] || {})["3-DelayPost"] || "").trim());
+  return A.data ? filterParticipants(A.data.participants) : [];
 }
 
 /** n per group and transition: everyone for pre->post, only those with a delay-post answer after. */
@@ -224,7 +76,7 @@ function groupNs(ps) {
   for (const p of ps) {
     if (!n[p.group]) continue;
     n[p.group].pp++;
-    if (hasDelayPost(p)) n[p.group].pd++;
+    if (hasDelayPost(p, A.data.questions)) n[p.group].pd++;
   }
   return n;
 }
@@ -707,12 +559,7 @@ function onKey(ev) {
 }
 
 function bindEvents() {
-  const f = $("#load-form").elements;
-  addBrowseButton(f.data, "the participant data CSV");
-  addBrowseButton(f.codebook, "the codebook CSV");
-  addBrowseButton(f.summary, "the code summary JSON", true);
-  $("#add-coder").addEventListener("click", () => addCoderField().focus());
-  $("#load-form").addEventListener("submit", onLoad);
+  setupFilesForm(loadFromForm);
   const onFilter = () => { renderParticipants(); renderCodeTable(); renderDetail(); if (A.sel) $("#summary .counts-line")?.replaceWith(countsLine()); };
   $("#filter-site").addEventListener("change", onFilter);
   $("#filter-search").addEventListener("input", onFilter);

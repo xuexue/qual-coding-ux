@@ -8,18 +8,9 @@
 </head>
 <body class="analysis-page">
   <header id="topbar">
-    <form id="load-form">
-      <div class="form-row">
-        <label title="Participant responses CSV">Data <input name="data" placeholder="responses.csv" required></label>
-        <label title="Codebook CSV">Codebook <input name="codebook" placeholder="codebook.csv" required></label>
-        <label title="Code summary JSON (created if missing)">Summary <input name="summary" placeholder="code_summary.json" required></label>
-        <button type="submit">Load</button>
-      </div>
-      <div class="form-row" id="coder-fields">
-        <button type="button" id="add-coder" title="Add another coder's highlights JSON">+ coder</button>
-      </div>
-    </form>
+    {% include "_files_form.html" %}
     <a id="page-link" href="/" title="Back to the coding app">← Coding app</a>
+    <a class="page-link" href="/quant" title="Co-occurrence between codes">Quant ↗</a>
     <div id="status"></div>
   </header>
 
@@ -56,6 +47,7 @@
   </main>
 
   <script src="{{ static_url('common.js') }}"></script>
+  <script src="{{ static_url('codes.js') }}"></script>
   <script src="{{ static_url('analysis.js') }}"></script>
 </body>
 </html>

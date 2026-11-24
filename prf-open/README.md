@@ -85,5 +85,23 @@ three default coders' files) as soon as it opens; click **Load** after changing 
   to a code, and an underline on a number, show which summaries exist. Summaries saved in an
   earlier format (without groups) are loaded into both groups.
 
+## Quant analysis page
+
+Open http://127.0.0.1:5001/quant (or **Quant ↗** on the analysis page). It has the same file
+fields and defaults as the analysis page, and the two share what the server has loaded: loading
+files on either page changes both. Same merging, `CODE_MERGES` and pattern-code rules.
+
+It shows a code-by-code co-occurrence matrix: two codes co-occur when the same participant was
+given both (by at least one coder each, in either question) in the same transition.
+
+- Filters on the left (site, group, search); above the matrix, choose the transition
+  (Pre→Post or →Delay-post), group (A, B or A + B), and codes (+/−/=, or + only: drops the
+  − and = codes; pattern codes and proposals stay). N is the number of participants in that
+  selection (for →Delay-post, only those with a delay-post answer).
+- Cells show the count of participants given both codes, or (toggle) φ (phi, −1 to +1; blue
+  positive, red negative) or Jaccard (both ÷ either). The diagonal is the number given each code.
+  Codes nobody in the selection was given are hidden. Hover a cell for all the numbers.
+- Exploratory only: no statistical tests.
+
 Highlights on notes are anchored by offset and text, so they follow the excerpt if the note is
 edited later; if the excerpt is deleted, the code is listed as "text no longer found".

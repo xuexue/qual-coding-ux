@@ -164,3 +164,35 @@ When navigating to the analysis page, the files should be loaded automatically
 (the last-used files, or the default files for the three coders), without
 needing to click "Load".
 
+
+QUANT ANALYSIS MODE
+
+Add a third page that shows the correlation  (or co-occurences) between codes.
+
+The quant analysis mode should be a third page. It uses the same files as the
+analysis mode (data file, codebook file, the highlight json files from the
+different coders), and the same merging: a participant/time is considered
+being assigned a code if there is *at least* one coder that gave it that code.
+The same code merges and pattern-code rules from the analysis mode apply.
+
+Two codes *co-occur* if the same participant was given both codes in the same
+transition (pre->post, or pre/post->delay-post). As in the analysis mode,
+treat +/-/= as separate codes, and treat goodatml and discipline similarly.
+
+For the quant analysis mode, I would like to see:
+
+- On the left, the same filters as the analysis mode: site filter, group A/B
+  checkbox filter, and the search. All computed numbers should be using only
+  the selected participants.
+- A choice of transition (pre->post or ->delay-post) and group (A, B, or both).
+- A code-by-code matrix (heatmap), with codes grouped by theme in the same
+  order as the codebook. Each cell shows the number of participants that were
+  given both codes. The diagonal shows the number of participants given that
+  code. There should be a toggle to show the count, or a measure that accounts
+  for how common each code is (e.g., phi correlation, or Jaccard).
+  Codes that no participant in the selection was given should be hidden.
+- Hovering a cell shows the counts: n with both codes, n with each code,
+  n in the group.
+
+This is exploratory: do not include statistical tests (no p-values or
+significance markers).

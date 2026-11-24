@@ -1,0 +1,13 @@
+{# The analysis files (data, codebook, summary, one highlights JSON per coder), shared by the
+   analysis and quant pages; driven by the files-form functions in static/codes.js. #}
+<form id="load-form">
+  <div class="form-row">
+    <label title="Participant responses CSV">Data <input name="data" placeholder="responses.csv" required></label>
+    <label title="Codebook CSV">Codebook <input name="codebook" placeholder="codebook.csv" required></label>
+    <label title="Code summary JSON (created if missing)">Summary <input name="summary" placeholder="code_summary.json" required></label>
+    <button type="submit">Load</button>
+  </div>
+  <div class="form-row" id="coder-fields">
+    <button type="button" id="add-coder" title="Add another coder's highlights JSON">+ coder</button>
+  </div>
+</form>
