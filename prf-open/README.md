@@ -42,9 +42,9 @@ the dropdown under each applied code. "Propose new code" exports as `propose-new
   and press Enter to apply the first match. **Propose new code** records that no existing code fits,
   with an optional description.
 
-## Multi-coder analysis page
+## Analysis page
 
-Open http://127.0.0.1:5001/analysis (or **Multi-coder analysis ↗** in the coding app). Give it the
+Open http://127.0.0.1:5001/analysis (or **Analysis ↗** in the coding app). Give it the
 data CSV, the codebook CSV, a `code_summary.json` path (created if missing), and one highlights
 JSON per coder (**+ coder** adds another; coders are numbered Coder 1, 2, … in that order).
 The highlights JSON includes a copy of the coder's notes, so that one file is all a coder needs

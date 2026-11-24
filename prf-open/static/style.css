@@ -57,40 +57,6 @@ body.mode-notes #col-codes { display: none; }
 .col-resizer[hidden] { display: none; }
 body.resizing { cursor: col-resize; user-select: none; }
 
-/* ---- analysis mode */
-#mode-toggle button + button { border-left: 0; }
-#analysis-panel { display: none; }
-body.mode-analysis #analysis-panel {
-  display: block; background: #fff; border: 1px solid #ddd; border-radius: 4px;
-  padding: 6px 8px; margin-bottom: 8px; font-size: 12px;
-}
-body.mode-analysis #proposals { display: none; }  /* proposals are a chip in the codebook here */
-.analysis-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-.analysis-head .ann-code { font-size: 13px; }
-.mod-filter { display: flex; gap: 2px; margin: 4px 0; }
-.mod-filter button { flex: 1; border: 1px solid #bbb; background: #fff; border-radius: 3px; font-size: 12px; padding: 1px 0; }
-.mod-filter button.active { background: #2d5d8a; border-color: #2d5d8a; color: #fff; }
-table.stats { width: 100%; border-collapse: collapse; margin: 4px 0; }
-table.stats th, table.stats td { text-align: right; padding: 1px 4px; border-bottom: 1px solid #eee; }
-table.stats th:first-child, table.stats td:first-child { text-align: left; }
-table.stats th { font-weight: 600; color: #666; font-size: 11px; }
-table.stats tr.total td { font-weight: 700; border-bottom: 0; }
-.transition-counts { list-style: none; margin: 4px 0; padding: 0; }
-.transition-counts li { display: flex; justify-content: space-between; color: #555; font-size: 11px; }
-.chip-count {
-  display: inline-block; margin-left: 4px; padding: 0 4px; border-radius: 7px;
-  font-size: 10px; line-height: 14px; background: var(--tint, #eee); color: var(--strong, #333);
-}
-.code-chip.selected { background: var(--strong); color: #fff; }
-.code-chip.selected .chip-count { background: #fff; }
-.code-chip.zero { opacity: .45; }
-.propose-chip { border: 1px dashed #222 !important; color: #222 !important; margin-top: 4px; }
-.propose-chip.selected { background: #222 !important; color: #fff !important; }
-.mod-badge { background: #e3edf7; color: #1f4e79; font-weight: 700; }
-.hl.dim { opacity: .3; }
-.hl.dim.has-mod::after { opacity: .5; }
-.annotation-list li.dim { opacity: .35; }
-
 /* ---- participants */
 .filters { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .group-filter { display: flex; gap: 12px; }
