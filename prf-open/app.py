@@ -52,12 +52,18 @@ HIGHLIGHTS_VERSION = 1
 
 SESSION_FILE = Path.home() / ".prf_open_session.json"
 APP_DIR = Path(__file__).resolve().parent
-DEFAULT_DATA_DIR = (APP_DIR / ".." / "ml-prf-data" / "qual").resolve()
+DEFAULT_DATA_DIR = (APP_DIR / ".." / ".." / "ml-prf-data" / "qual").resolve()
 DEFAULT_PATHS = {
     "data": DEFAULT_DATA_DIR / "qual_participant_view.csv",
     "notes": DEFAULT_DATA_DIR / "lisa_utm_utsg_open.csv",
     "codebook": DEFAULT_DATA_DIR / "open_codebook_oct27.csv",
 }
+# Every coder's highlights, offered by default on the analysis page (Coder 1, 2, 3 in this order).
+DEFAULT_CODERS = [
+    DEFAULT_DATA_DIR / "lisa_utm_utsg_open_highlights.json",
+    DEFAULT_DATA_DIR / "KaterinaNCSU_highlights.json",
+    DEFAULT_DATA_DIR / "ilinca_tud_open_highlights.json",
+]
 
 # In-memory state. The source of truth on disk is the CSV files the user picks.
 state = {
@@ -150,6 +156,10 @@ def expand(p):
 # ---------------------------------------------------------------- loaders
 
 def load_data(path):
+    state["participants"] = parse_data(path)
+
+
+def parse_data(path):
     rows = read_rows(path)
     if not rows:
         raise ValueError("Data file is empty")
@@ -186,13 +196,20 @@ def load_data(path):
         return any(pred(t) and text.strip()
                    for answers in p["responses"].values() for t, text in answers.items())
 
-    state["participants"] = {
+    return {
         pid: p for pid, p in participants.items()
         if has(p, lambda t: t == "1-Pre") and has(p, lambda t: t != "1-Pre")
     }
 
 
 def load_notes(path):
+    notes, extra_cols, extra_rows = parse_notes(path)
+    state["notes"] = notes
+    state["notes_extra"] = {"columns": extra_cols, "rows": extra_rows}
+
+
+def parse_notes(path):
+    """Return (notes, extra_columns, extra_rows) from a notes CSV; empty if it doesn't exist."""
     notes, extra_cols, extra_rows = {}, [], {}
     if path and Path(path).exists():
         rows = read_rows(path)
@@ -227,8 +244,7 @@ def load_notes(path):
                             entry[key] += "\n" + val
                     else:
                         entry[key] = val
-    state["notes"] = notes
-    state["notes_extra"] = {"columns": extra_cols, "rows": extra_rows}
+    return notes, extra_cols, extra_rows
 
 
 def write_notes():
@@ -249,6 +265,10 @@ def write_notes():
 
 
 def load_codebook(path):
+    state["codebook"] = parse_codebook(path)
+
+
+def parse_codebook(path):
     rows = read_rows(path)
     if not rows:
         raise ValueError("Codebook is empty")
@@ -269,7 +289,7 @@ def load_codebook(path):
         desc = ",".join(row[di:]).strip() if di is not None and di < len(row) else ""
         kind = "pattern" if theme.lower() == PATTERN_THEME else "concept"
         codes.append({"theme": theme, "code": code, "description": desc, "kind": kind})
-    state["codebook"] = codes
+    return codes
 
 
 def default_transition(source, field):
@@ -283,10 +303,22 @@ def default_transition(source, field):
 
 
 def load_highlights(path):
-    anns = []
+    state["annotations"] = parse_highlights(path)[0]
+
+
+def parse_highlights(path):
+    """Return (annotations, files, notes) from a highlights JSON; empty if it doesn't exist.
+
+    notes is None for files saved before notes were included in the JSON.
+    """
+    anns, files, notes = [], {}, None
     if path and Path(path).exists():
         with open(path, encoding="utf-8") as f:
             doc = json.load(f)
+        if isinstance(doc, dict) and isinstance(doc.get("files"), dict):
+            files = doc["files"]
+        if isinstance(doc, dict) and isinstance(doc.get("notes"), dict):
+            notes = doc["notes"]
         raw = doc.get("highlights", []) if isinstance(doc, dict) else doc
         for item in raw:
             a = {k: item.get(k, "") for k in ANNOTATION_FIELDS}
@@ -297,8 +329,9 @@ def load_highlights(path):
                 a["start"], a["end"] = -1, -1
             if a["transition"] not in NOTE_COLUMNS:
                 a["transition"] = default_transition(a["source"], a["field"])
+            a["full_code"] = export_code(a)
             anns.append(a)
-    state["annotations"] = anns
+    return anns, files, notes
 
 
 def export_code(a):
@@ -316,6 +349,10 @@ def write_highlights():
         "version": HIGHLIGHTS_VERSION,
         "saved_at": datetime.now().isoformat(timespec="seconds"),
         "files": {k: v for k, v in state["paths"].items() if k != "highlights"},
+        # A copy of the notes (the CSV stays the source of truth), so this one file is enough
+        # for the analysis page to show a coder's notes with their highlights.
+        "notes": {pid: {k: v for k, v in n.items() if v.strip()}
+                  for pid, n in sorted(state["notes"].items()) if any(v.strip() for v in n.values())},
         "highlights": state["annotations"],
     }
     atomic_write(path, lambda f: json.dump(doc, f, indent=2, ensure_ascii=False))
@@ -583,6 +620,175 @@ def save_all():
         return jsonify({"error": str(e)}), 500
     save_session()
     return jsonify({"paths": state["paths"]})
+
+
+# ---------------------------------------------------------------- analysis page
+#
+# A separate, read-only view over several coders' highlights JSON files (see spec.txt,
+# ANALYSIS MODE). The only thing it writes is code_summary.json: one summary per code.
+
+ANALYSIS_SESSION_FILE = Path.home() / ".prf_open_analysis_session.json"
+SUMMARY_VERSION = 1
+
+astate = {
+    "paths": {"data": "", "codebook": "", "summary": "", "highlights": []},
+    "participants": {},
+    "codebook": [],
+    "coders": [],      # [{name, path, notes_path, notes, annotations}]
+    "summaries": {},   # full_code ("+training", "return-to-pre") -> {summary, theme, updated_at}
+}
+
+
+def coder_notes_path(highlights_path, files):
+    """The notes CSV a highlights file was made with: as recorded in it, else its sibling."""
+    recorded = expand(files.get("notes", "")) if isinstance(files.get("notes"), str) else ""
+    if recorded and Path(recorded).exists():
+        return recorded
+    p = Path(highlights_path)
+    if p.name.endswith("_highlights.json"):
+        sibling = p.with_name(p.name[: -len("_highlights.json")] + ".csv")
+        if sibling.exists():
+            return str(sibling)
+    return ""
+
+
+def parse_summaries(path):
+    if not path or not Path(path).exists():
+        return {}
+    with open(path, encoding="utf-8") as f:
+        doc = json.load(f)
+    raw = doc.get("summaries", {}) if isinstance(doc, dict) else {}
+    out = {}
+    for code, v in raw.items():
+        if isinstance(v, str):
+            v = {"summary": v}
+        if isinstance(v, dict):
+            out[code] = {"summary": v.get("summary", ""), "theme": v.get("theme", ""),
+                         "updated_at": v.get("updated_at", "")}
+    return out
+
+
+def write_summaries():
+    path = astate["paths"]["summary"]
+    if not path:
+        raise ValueError("No code summary path set")
+    doc = {
+        "version": SUMMARY_VERSION,
+        "saved_at": datetime.now().isoformat(timespec="seconds"),
+        "files": {
+            "data": astate["paths"]["data"],
+            "codebook": astate["paths"]["codebook"],
+            "highlights": [c["path"] for c in astate["coders"]],
+        },
+        # Codes with an empty summary are dropped; sorted so diffs stay readable.
+        "summaries": {k: v for k, v in sorted(astate["summaries"].items()) if v["summary"].strip()},
+    }
+    atomic_write(path, lambda f: json.dump(doc, f, indent=2, ensure_ascii=False))
+
+
+def analysis_snapshot():
+    return {
+        "paths": astate["paths"],
+        "participants": sorted(astate["participants"].values(), key=lambda p: p["id"]),
+        "codebook": astate["codebook"],
+        "coders": astate["coders"],
+        "summaries": astate["summaries"],
+        "questions": QUESTIONS,
+        "times": TIMES,
+        "noteColumns": NOTE_COLUMNS,
+        "proposeCode": PROPOSE_CODE,
+        "proposeLabel": PROPOSE_LABEL,
+    }
+
+
+@app.route("/analysis")
+def analysis_page():
+    return render_template("analysis.html")
+
+
+@app.route("/api/analysis/state", methods=["GET"])
+def analysis_state():
+    return jsonify(analysis_snapshot())
+
+
+@app.route("/api/analysis/last-session", methods=["GET"])
+def analysis_last_session():
+    try:
+        paths = json.loads(ANALYSIS_SESSION_FILE.read_text())
+    except (OSError, ValueError):
+        paths = {}
+    coding = load_session_paths()
+    for k in ("data", "codebook"):
+        paths[k] = paths.get(k) or coding.get(k) or str(DEFAULT_PATHS[k])
+    if not paths.get("highlights"):
+        paths["highlights"] = [str(p) for p in DEFAULT_CODERS]
+    paths["summary"] = paths.get("summary") or str(Path(paths["data"]).parent / "code_summary.json")
+    return jsonify(paths)
+
+
+@app.route("/api/analysis/load", methods=["POST"])
+def analysis_load():
+    body = request.get_json(force=True)
+    data, codebook, summary = (expand((body.get(k) or "").strip()) for k in ("data", "codebook", "summary"))
+    hl_paths = [expand(p.strip()) for p in body.get("highlights") or [] if p and p.strip()]
+    try:
+        if not data or not Path(data).exists():
+            raise ValueError(f"Data file not found: {data or '(none given)'}")
+        if not codebook or not Path(codebook).exists():
+            raise ValueError(f"Codebook not found: {codebook or '(none given)'}")
+        if not hl_paths:
+            raise ValueError("Add at least one coder's highlights JSON")
+        if not summary:
+            raise ValueError("A code summary JSON path is required (it will be created if missing)")
+        participants = parse_data(data)
+        codes = parse_codebook(codebook)
+        coders = []
+        for i, path in enumerate(hl_paths, 1):
+            if not Path(path).exists():
+                raise ValueError(f"Highlights file not found: {path}")
+            anns, files, notes = parse_highlights(path)
+            if notes is not None:
+                notes_source = "highlights JSON"
+            else:  # older highlights file: look for the coder's notes CSV
+                notes_source = coder_notes_path(path, files)
+                notes = parse_notes(notes_source)[0] if notes_source else {}
+            coders.append({
+                "name": f"Coder {i}", "path": path, "notes_source": notes_source,
+                "notes": notes, "annotations": anns,
+            })
+        summaries = parse_summaries(summary)
+    except (OSError, ValueError, csv.Error) as e:
+        return jsonify({"error": str(e)}), 400
+    astate.update(participants=participants, codebook=codes, coders=coders, summaries=summaries,
+                  paths={"data": data, "codebook": codebook, "summary": summary, "highlights": hl_paths})
+    try:
+        ANALYSIS_SESSION_FILE.write_text(json.dumps(astate["paths"], indent=2))
+    except OSError:
+        pass
+    return jsonify(analysis_snapshot())
+
+
+@app.route("/api/analysis/summary", methods=["POST"])
+def analysis_save_summary():
+    body = request.get_json(force=True)
+    code = (body.get("code") or "").strip()
+    if not code:
+        return jsonify({"error": "missing code"}), 400
+    previous = astate["summaries"].get(code)
+    astate["summaries"][code] = {
+        "summary": body.get("summary", ""),
+        "theme": body.get("theme", ""),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    try:
+        write_summaries()
+    except (OSError, ValueError) as e:
+        if previous is None:
+            astate["summaries"].pop(code, None)
+        else:
+            astate["summaries"][code] = previous
+        return jsonify({"error": str(e)}), 500
+    return jsonify(astate["summaries"][code])
 
 
 if __name__ == "__main__":

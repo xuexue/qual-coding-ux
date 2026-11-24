@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PRF Analysis</title>
+  <link rel="stylesheet" href="{{ static_url('style.css') }}">
+  <link rel="stylesheet" href="{{ static_url('analysis.css') }}">
+</head>
+<body class="analysis-page">
+  <header id="topbar">
+    <form id="load-form">
+      <div class="form-row">
+        <label title="Participant responses CSV">Data <input name="data" placeholder="responses.csv" required></label>
+        <label title="Codebook CSV">Codebook <input name="codebook" placeholder="codebook.csv" required></label>
+        <label title="Code summary JSON (created if missing)">Summary <input name="summary" placeholder="code_summary.json" required></label>
+        <button type="submit">Load</button>
+      </div>
+      <div class="form-row" id="coder-fields">
+        <button type="button" id="add-coder" title="Add another coder's highlights JSON">+ coder</button>
+      </div>
+    </form>
+    <a id="page-link" href="/" title="Back to the coding app">← Coding app</a>
+    <div id="status"></div>
+  </header>
+
+  <main id="a-columns">
+    <section id="a-participants" class="col">
+      <h2>Participants</h2>
+      <div class="filters">
+        <select id="filter-site"><option value="">All sites</option></select>
+        <div class="group-filter">
+          <label><input type="checkbox" value="A" checked> A</label>
+          <label><input type="checkbox" value="B" checked> B</label>
+        </div>
+        <input id="filter-search" placeholder="Search id…">
+      </div>
+      <div id="participant-list"></div>
+    </section>
+
+    <section id="a-codes" class="col">
+      <div class="codes-head">
+        <h2>Codes</h2>
+        <label class="small"><input type="checkbox" id="hide-unused" checked> hide unused</label>
+      </div>
+      <input id="code-search" placeholder="Filter codes…">
+      <div id="code-table"></div>
+    </section>
+
+    <section id="a-detail" class="col">
+      <div id="detail"><p class="empty">Load files, then click a code.</p></div>
+    </section>
+
+    <section id="a-summary" class="col">
+      <div id="summary"></div>
+    </section>
+  </main>
+
+  <script src="{{ static_url('common.js') }}"></script>
+  <script src="{{ static_url('analysis.js') }}"></script>
+</body>
+</html>

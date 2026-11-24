@@ -28,6 +28,8 @@ h3 { font-size: 13px; margin: 12px 0 6px; text-transform: uppercase; letter-spac
 #load-form button { padding: 2px 10px; font-size: 12px; }
 #load-form .browse { padding: 1px 4px; font-size: 11px; }
 #mode-toggle { flex: none; }
+#page-link { flex: none; font-size: 12px; color: #2d5d8a; text-decoration: none; }
+#page-link:hover { text-decoration: underline; }
 #mode-toggle button { font-size: 12px; }
 #status { flex: none; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
 #mode-toggle button { padding: 2px 10px; border: 1px solid #aaa; background: #fff; }

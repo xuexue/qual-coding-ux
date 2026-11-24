@@ -133,7 +133,7 @@ For the analysis mode, I would like to see:
   "A" and "B" separately (sort order). I would still like the site filter
   and group A/B checkbox filter, and the search.
 - Next to the left-most column, I would like to see the list of codes.
-  One line per code, grouped by the tentative "theme" in the codebook file.
+  One line per code, grouped by the tentative "theme" in the codebook file. Treat +/-/= as separate codes. Treat goodatml and discipline similarly.
   Next to each code, I would like to see the number of "A" and "B"s within
   the selected participants that is given the code in the pre->post and pre/post->delay-post. There should be four numbers here in each row.
   (Also add a heading row that shows the $n$ in each group --- this will not be
@@ -145,6 +145,7 @@ For the analysis mode, I would like to see:
   so that it is easy to be able to write summaries of the codes.
 - On the far right there should be a "code summary" textbox. 
   This is for a researcher to write down the summary for the code.
+  One summary per code.
 
-
+Coder names should be numbered: Coder 1, 2, 3.
 

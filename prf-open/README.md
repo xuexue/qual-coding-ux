@@ -42,5 +42,30 @@ the dropdown under each applied code. "Propose new code" exports as `propose-new
   and press Enter to apply the first match. **Propose new code** records that no existing code fits,
   with an optional description.
 
+## Multi-coder analysis page
+
+Open http://127.0.0.1:5001/analysis (or **Multi-coder analysis ↗** in the coding app). Give it the
+data CSV, the codebook CSV, a `code_summary.json` path (created if missing), and one highlights
+JSON per coder (**+ coder** adds another; coders are numbered Coder 1, 2, … in that order).
+The highlights JSON includes a copy of the coder's notes, so that one file is all a coder needs
+to send. Files saved before that change have no notes: the page then looks for the notes CSV
+recorded in the file, or `<name>.csv` next to `<name>_highlights.json`. To add the notes,
+load the files in the coding app and click **Save all** (any edit also re-saves).
+The paths are remembered in `~/.prf_open_analysis_session.json`.
+
+- **Codes column**: one row per code and modifier (`+training`, `−training`, `=training`,
+  `return-to-pre`), grouped by theme, plus codes no longer in the codebook and proposed codes.
+  The four numbers count participants in the current filter selection who were given the code
+  by *at least one* coder, in either question: A and B for pre→post, then A and B for →delay-post.
+  The `n` row is the number of selected participants per group (for →delay-post, only those
+  with a delay-post answer). Hover a number for its percentage. ↑/↓ (or j/k) move between codes.
+- **Detail**: clicking a code lists every participant who has it, by transition and group. Each card
+  shows the answers for that transition side by side and each coder's note, with that code's
+  highlights tinted per coder (stripes where coders overlap), plus notes from coders who didn't
+  apply it. Clicking a participant scrolls to their card; with no code selected it shows a table of
+  every code each coder gave them.
+- **Code summary**: one summary per code, saved to `code_summary.json` as you type, keyed by
+  the code as exported (e.g. `"+training"`). Codes with a summary are marked ✎.
+
 Highlights on notes are anchored by offset and text, so they follow the excerpt if the note is
 edited later; if the excerpt is deleted, the code is listed as "text no longer found".
