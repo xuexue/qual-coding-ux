@@ -314,6 +314,20 @@ function renderParticipants() {
   box.replaceChildren(...(sections.length ? sections : [el("p", { class: "empty" }, "No participants match.")]));
 }
 
+/** count | % switch for the code table's numbers (sits in the n row). */
+function numModeToggle() {
+  return el("span", { class: "seg", title: "Show each number as a count or as a % of the group's n" },
+    ...[["count", "count"], ["pct", "%"]].map(([mode, label]) => el("button", {
+      type: "button",
+      class: A.numMode === mode ? "active" : "",
+      onclick: () => {
+        A.numMode = mode;
+        localStorage.setItem("prf-num-mode", mode);
+        renderCodeTable();
+      },
+    }, label)));
+}
+
 function renderCodeTable() {
   const box = $("#code-table");
   if (!A.data) return;
@@ -327,7 +341,7 @@ function renderCodeTable() {
       el("th", { colspan: 2, class: "trans-head" }, "Pre→Post"),
       el("th", { colspan: 2, class: "trans-head" }, "→Delay")),
     el("tr", {}, ...["A", "B", "A", "B"].map((g) => el("th", { class: "num" }, g))),
-    el("tr", { class: "n-row" }, el("td", { class: "code-col" }, ""),
+    el("tr", { class: "n-row" }, el("td", { class: "code-col" }, numModeToggle()),
       ...CELLS.map(([g, k]) => el("td", { class: "num" }, String(n[g][k])))));
 
   const body = el("tbody");
@@ -704,15 +718,6 @@ function bindEvents() {
   $("#filter-search").addEventListener("input", onFilter);
   document.querySelectorAll(".group-filter input").forEach((i) => i.addEventListener("change", onFilter));
   $("#hide-unused").addEventListener("change", renderCodeTable);
-  const showNumMode = () => document.querySelectorAll("#num-mode button").forEach((b) =>
-    b.classList.toggle("active", b.dataset.mode === A.numMode));
-  document.querySelectorAll("#num-mode button").forEach((b) => b.addEventListener("click", () => {
-    A.numMode = b.dataset.mode;
-    localStorage.setItem("prf-num-mode", A.numMode);
-    showNumMode();
-    renderCodeTable();
-  }));
-  showNumMode();
   $("#code-search").addEventListener("input", renderCodeTable);
   document.addEventListener("keydown", onKey);
   // An async fetch may not finish while the page unloads; a beacon does.

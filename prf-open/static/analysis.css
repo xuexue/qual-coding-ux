@@ -40,8 +40,7 @@
 
 /* ---- code table */
 .codes-head { display: flex; justify-content: space-between; align-items: baseline; }
-.codes-opts { display: flex; gap: 8px; align-items: center; }
-.seg { display: inline-flex; }
+.seg { display: inline-flex; font-weight: normal; }
 .seg button { border: 1px solid #bbb; background: #fff; font-size: 11px; padding: 0 6px; line-height: 16px; }
 .seg button:first-child { border-radius: 3px 0 0 3px; }
 .seg button:last-child { border-radius: 0 3px 3px 0; border-left: 0; }
