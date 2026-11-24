@@ -140,12 +140,27 @@ For the analysis mode, I would like to see:
   the same number for pre->post and ->Delay-post since not all participants
   completed the delay-post)
 - Clicking on a code should populate the rest of the screen on the right.
+  This should be per GROUP and TIMESTEP: each of the four numbers in a row
+  should be separately clickable. For example, clicking on the "A" number under
+  pre->post shows the "A" participants that were given the code in pre->post.
   I should be able to easily see the original quotes, and the way that
   each coder highlighted the user. I'm not quite sure how to design this screen
   so that it is easy to be able to write summaries of the codes.
-- On the far right there should be a "code summary" textbox. 
+- When no code is selected, clicking on a participant should show the
+  comparison between coders for that participant: the codes that each coder
+  gave in each of the four transitions (goodatml: pre->post, etc...).
+  On that page I would also like to see the original quotes (the
+  pre/post/delay-post answers to both questions) and each coder's notes,
+  with the regions that each coder highlighted.
+- On the far right there should be a "code summary" textbox.
   This is for a researcher to write down the summary for the code.
-  One summary per code.
+  One summary per code, separately for each group and timestep, i.e., four
+  summaries per code: "A" pre->post, "B" pre->post, "A" ->delay-post,
+  "B" ->delay-post.
 
 Coder names should be numbered: Coder 1, 2, 3.
+
+When navigating to the analysis page, the files should be loaded automatically
+(the last-used files, or the default files for the three coders), without
+needing to click "Load".
 

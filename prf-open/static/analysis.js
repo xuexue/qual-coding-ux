@@ -1,13 +1,14 @@
 "use strict";
 // Analysis page (spec.txt, ANALYSIS MODE): merge several coders' highlights, count each code
-// per group and transition within the filtered participants, show the quotes behind a code,
-// and write one summary per code to code_summary.json.
+// per group and transition within the filtered participants, show the quotes behind a code for
+// one group and transition, and write one summary per code, transition and group to
+// code_summary.json.
 
 const A = {
   data: null,        // snapshot from /api/analysis/state
-  code: null,        // selected full code, e.g. "+training"
+  sel: null,         // selected code, transition and group: {fc: "+training", k: "pp" | "pd", g: "A" | "B"}
   pid: null,         // selected participant
-  trans: "all",      // detail filter: "all" | "pp" | "pd"
+  numMode: localStorage.getItem("prf-num-mode") === "pct" ? "pct" : "count",  // code table: count or %
   rows: [],          // [{fc, code, modifier, theme, kind, description, group}] in display order
   rowByFc: new Map(),
   hits: new Map(),   // fc -> pid -> {pp: Set(coderIdx), pd: Set(coderIdx)}
@@ -16,6 +17,9 @@ const A = {
 const TRANS = { pp: "Pre → Post", pd: "Pre/Post → Delay-post" };
 const TRANS_TIMES = { pp: ["1-Pre", "2-Post"], pd: ["1-Pre", "2-Post", "3-DelayPost"] };
 const GROUPS = ["A", "B"];
+// The four numbers in a code row, left to right: [group, transition].
+const CELLS = [["A", "pp"], ["B", "pp"], ["A", "pd"], ["B", "pd"]];
+const cellLabel = (g, k) => `Group ${g}, ${TRANS[k]}`;
 
 // One colour per coder: [strong, tint]. Highlights in the detail view show a single code,
 // so colour only ever means "which coder".
@@ -27,6 +31,13 @@ const coderColor = (i) => CODER_PALETTE[i % CODER_PALETTE.length];
 
 const tkind = (transition) => (transition.endsWith("_pd") ? "pd" : "pp");
 const modLabel = (fc) => fc.replace(/^-/, "−");
+const isSel = (fc, k, g) => !!A.sel && A.sel.fc === fc && (!k || A.sel.k === k) && (!g || A.sel.g === g);
+
+/** The saved summary for a code, transition and group ({} if none). */
+function summaryOf(fc, k, g) {
+  return (((A.data.summaries[fc] || {})[k] || {})[g]) || {};
+}
+const summaryText = (fc, k, g) => summaryOf(fc, k, g).summary || "";
 
 // ------------------------------------------------------------ loading
 
@@ -37,7 +48,9 @@ async function init() {
     fillForm(snap.paths);
     applySnapshot(snap);
   } else {
+    // Nothing loaded on the server yet: load the last-used (or default) files right away.
     fillForm(await api("GET", "/api/analysis/last-session"));
+    await loadFromForm();
   }
 }
 
@@ -76,8 +89,12 @@ function numberCoderFields() {
 
 async function onLoad(ev) {
   ev.preventDefault();
+  await loadFromForm();
+}
+
+async function loadFromForm() {
   await flushSummary();
-  const f = ev.target.elements;
+  const f = $("#load-form").elements;
   try {
     const snap = await api("POST", "/api/analysis/load", {
       data: f.data.value, codebook: f.codebook.value, summary: f.summary.value,
@@ -87,6 +104,7 @@ async function onLoad(ev) {
     const nAnn = snap.coders.reduce((s, c) => s + c.annotations.length, 0);
     const noNotes = snap.coders.filter((c) => !c.notes_source).map((c) => c.name);
     setStatus(`Loaded ${snap.participants.length} participants, ${snap.coders.length} coders, ${nAnn} code applications.` +
+      (A.recoded ? ` ${A.recoded} merged or pattern code(s) shown under their new name.` : "") +
       (noNotes.length ? ` No notes found for ${noNotes.join(", ")}: re-save their highlights with the coding app.` : ""),
       noNotes.length > 0);
   } catch (e) {
@@ -103,10 +121,42 @@ function applySnapshot(snap) {
   const cur = sel.value;
   sel.replaceChildren(el("option", { value: "" }, "All sites"), ...sites.map((s) => el("option", { value: s }, s)));
   sel.value = sites.includes(cur) ? cur : "";
-  const fromHash = decodeURIComponent(location.hash.slice(1));
-  if (!A.rowByFc.has(A.code)) A.code = A.rowByFc.has(fromHash) ? fromHash : null;
+  // The selection survives reloads via the URL hash, e.g. #pd:B:+training.
+  const m = decodeURIComponent(location.hash.slice(1)).match(/^(pp|pd):(A|B):(.+)$/);
+  if (!(A.sel && A.rowByFc.has(A.sel.fc))) A.sel = m && A.rowByFc.has(m[3]) ? { fc: m[3], k: m[1], g: m[2] } : null;
   if (!A.participants.has(A.pid)) A.pid = null;
   renderAll();
+}
+
+/**
+ * Rewrite codes for display (the coders' files are not changed): apply CODE_MERGES from
+ * app.py (old name -> new name, keeping the modifier), then drop the modifier from pattern
+ * codes ("+return-to-pre" -> "return-to-pre"). The original is kept in a.original_code.
+ * Returns how many applications changed.
+ */
+function normalizeCodes(coders, codebook, merges) {
+  const concept = new Set(codebook.filter((c) => c.kind !== "pattern").map((c) => c.code));
+  const patterns = new Set(codebook.filter((c) => c.kind === "pattern" && !concept.has(c.code)).map((c) => c.code));
+  const target = (code) => {
+    const seen = new Set();
+    while (merges[code] && !seen.has(code)) { seen.add(code); code = merges[code]; }  // follow chains
+    return code;
+  };
+  let changed = 0;
+  for (const coder of coders) {
+    for (const a of coder.annotations) {
+      if (a.code === A.data.proposeCode) continue;
+      const code = target(a.code);
+      const modifier = patterns.has(code) ? "" : a.modifier;
+      if (code === a.code && modifier === a.modifier) continue;
+      a.original_code = a.full_code;
+      a.code = code;
+      a.modifier = modifier;
+      a.full_code = modifier + code;
+      changed++;
+    }
+  }
+  return changed;
 }
 
 /** Code rows in display order, and which participant/transition each coder gave each code. */
@@ -124,6 +174,7 @@ function buildIndex() {
       addRow({ ...c, fc: m + c.code, modifier: m, group: c.theme || "(no theme)" });
     }
   }
+  A.recoded = normalizeCodes(coders, codebook, A.data.codeMerges || {});
   A.hits = new Map();
   const extras = [];
   coders.forEach((coder, ci) => {
@@ -197,10 +248,11 @@ function hitFor(fc, pid) {
   return (byPid && byPid.get(pid)) || null;
 }
 
-async function selectCode(fc) {
+/** Select a code for one transition and group; selecting the current one again clears it. */
+async function selectCode(fc, k, g) {
   await flushSummary();
-  A.code = A.code === fc ? null : fc;
-  history.replaceState(null, "", A.code ? `#${encodeURIComponent(A.code)}` : location.pathname);
+  A.sel = isSel(fc, k, g) ? null : { fc, k, g };
+  history.replaceState(null, "", A.sel ? `#${A.sel.k}:${A.sel.g}:${encodeURIComponent(A.sel.fc)}` : location.pathname);
   $("#a-detail").scrollTop = 0;
   renderAll();
 }
@@ -208,14 +260,16 @@ async function selectCode(fc) {
 function selectParticipant(pid) {
   A.pid = A.pid === pid ? null : pid;
   renderParticipants();
-  if (A.code && A.pid) {
+  if (A.sel && A.pid) {
     const card = document.querySelector(`.card[data-pid="${CSS.escape(A.pid)}"]`);
     if (card) {
       card.scrollIntoView({ block: "start", behavior: "smooth" });
       card.classList.add("flash");
       setTimeout(() => card.classList.remove("flash"), 1200);
     } else {
-      setStatus(`${pid} was not given ${modLabel(A.code)}.`);
+      const p = A.participants.get(pid);
+      setStatus(p.group !== A.sel.g ? `${pid} is in group ${p.group || "?"}, not ${A.sel.g}.`
+        : `${pid} was not given ${modLabel(A.sel.fc)} in ${TRANS[A.sel.k]}.`);
     }
   } else {
     renderDetail();
@@ -241,17 +295,18 @@ function renderParticipants() {
     if (!inGroup.length) continue;
     sections.push(el("div", { class: "group-head" }, g ? `Group ${g}` : "Other", el("span", { class: "count" }, ` ${inGroup.length}`)));
     sections.push(el("ul", { class: "plist" }, ...inGroup.map((p) => {
-      const h = A.code ? hitFor(A.code, p.id) : null;
-      const badges = A.code ? ["pp", "pd"].map((k) => {
+      const h = A.sel ? hitFor(A.sel.fc, p.id) : null;
+      const badges = A.sel ? ["pp", "pd"].map((k) => {
         const n = h ? h[k].size : 0;
         const coders = h ? [...h[k]].map((ci) => A.data.coders[ci].name).join(", ") : "";
         return el("span", {
-          class: "badge" + (n ? " done" : " off"),
+          class: "badge" + (n ? " done" : " off") + (k === A.sel.k ? " current" : ""),
           title: n ? `${TRANS[k]}: ${coders}` : `${TRANS[k]}: not coded`,
         }, k === "pp" ? "P" : "D");
       }) : [];
       return el("li", {
-        class: (p.id === A.pid ? "selected" : "") + (A.code && !h ? " dim" : ""),
+        class: (p.id === A.pid ? "selected" : "") +
+          (A.sel && !(p.group === A.sel.g && h && h[A.sel.k].size) ? " dim" : ""),
         onclick: () => selectParticipant(p.id),
       }, el("span", { class: "pid" }, p.id), el("span", { class: "badges" }, ...badges));
     })));
@@ -266,20 +321,20 @@ function renderCodeTable() {
   const n = groupNs(ps);
   const hideUnused = $("#hide-unused").checked;
   const q = $("#code-search").value.trim().toLowerCase();
-  const summaries = A.data.summaries;
 
   const head = el("thead", {},
     el("tr", {}, el("th", { rowspan: 2, class: "code-col" }, ""),
       el("th", { colspan: 2, class: "trans-head" }, "Pre→Post"),
       el("th", { colspan: 2, class: "trans-head" }, "→Delay")),
     el("tr", {}, ...["A", "B", "A", "B"].map((g) => el("th", { class: "num" }, g))),
-    el("tr", { class: "n-row" }, el("td", { class: "code-col" }, "n (selected)"),
-      ...[["A", "pp"], ["B", "pp"], ["A", "pd"], ["B", "pd"]].map(([g, k]) => el("td", { class: "num" }, String(n[g][k])))));
+    el("tr", { class: "n-row" }, el("td", { class: "code-col" }, ""),
+      ...CELLS.map(([g, k]) => el("td", { class: "num" }, String(n[g][k])))));
 
   const body = el("tbody");
   let lastGroup = null, shown = 0;
   for (const r of A.rows) {
-    if (hideUnused && !A.hits.has(r.fc) && r.fc !== A.code && !(summaries[r.fc] || {}).summary) continue;
+    const summarized = CELLS.filter(([g, k]) => summaryText(r.fc, k, g));
+    if (hideUnused && !A.hits.has(r.fc) && !isSel(r.fc) && !summarized.length) continue;
     if (q && !r.fc.toLowerCase().includes(q) && !(r.description || "").toLowerCase().includes(q)) continue;
     if (r.group !== lastGroup) {
       lastGroup = r.group;
@@ -288,21 +343,34 @@ function renderCodeTable() {
       body.append(el("tr", { class: "theme-row" }, el("td", { colspan: 5 }, themeDot(color), r.group)));
     }
     const c = codeCounts(r.fc, ps);
-    const cell = (g, k) => {
+    // Each number is its own click target: that code for that group and transition.
+    const cell = ([g, k]) => {
       const v = c[g][k], d = n[g][k];
-      return el("td", { class: "num" + (v ? "" : " zero"), title: d ? `${v}/${d} = ${Math.round((100 * v) / d)}% of group ${g}` : "" }, String(v));
+      const has = !!summaryText(r.fc, k, g);
+      const shown = A.numMode === "pct" ? (d ? String(Math.round((100 * v) / d)) : "–") : String(v);
+      return el("td", {
+        class: "num cell" + (v ? "" : " zero") + (isSel(r.fc, k, g) ? " sel" : "") + (has ? " has-sum" : ""),
+        title: `${modLabel(r.fc)}, ${cellLabel(g, k)}` + (d ? `: ${v}/${d} = ${Math.round((100 * v) / d)}%` : "") +
+          (has ? "\n✎ has a summary" : ""),
+        onclick: () => selectCode(r.fc, k, g),
+      }, shown);
     };
     const color = r.kind === "proposal" ? PROPOSAL_COLOR : (A.themeColors.get(r.theme) || PATTERN_COLOR);
     body.append(el("tr", {
-      class: "code-tr" + (r.fc === A.code ? " selected" : ""),
-      title: r.description || "",
+      class: "code-tr" + (isSel(r.fc) ? " selected" : ""),
+      dataset: { fc: r.fc },
       style: `--strong:${color[0]};--tint:${color[1] === "transparent" ? "#eee" : color[1]}`,
-      onclick: () => selectCode(r.fc),
     },
-      el("td", { class: "code-col" },
+      el("td", {
+        class: "code-col", title: (r.description ? r.description + "\n" : "") + "Click a number to choose the group and transition",
+        onclick: () => (isSel(r.fc) ? selectCode(r.fc, A.sel.k, A.sel.g) : selectCode(r.fc, "pp", "A")),
+      },
         el("span", { class: "code-label" + (r.kind === "pattern" ? " pattern" : "") }, modLabel(r.fc)),
-        (summaries[r.fc] || {}).summary ? el("span", { class: "has-summary", title: "Has a summary" }, "✎") : null),
-      cell("A", "pp"), cell("B", "pp"), cell("A", "pd"), cell("B", "pd")));
+        summarized.length ? el("span", {
+          class: "has-summary",
+          title: "Summaries written: " + summarized.map(([g, k]) => cellLabel(g, k)).join("; "),
+        }, `✎${summarized.length}`) : null),
+      ...CELLS.map(cell)));
     shown++;
   }
   box.replaceChildren(el("table", { class: "code-table" }, head, body));
@@ -314,39 +382,34 @@ function renderCodeTable() {
 function renderDetail() {
   const box = $("#detail");
   if (!A.data) return;
-  if (!A.code) {
+  if (!A.sel) {
     box.replaceChildren(A.pid ? participantView(A.pid)
-      : el("p", { class: "empty" }, "Click a code to see every quote and highlight behind it, or a participant to see all their codes."));
+      : el("p", { class: "empty" }, "Click one of a code's numbers to see every quote and highlight behind it for that group and transition, or a participant to compare the coders."));
     return;
   }
-  const r = A.rowByFc.get(A.code);
+  const { fc, k, g } = A.sel;
+  const r = A.rowByFc.get(fc);
   const ps = filteredParticipants();
+  const counts = codeCounts(fc, ps), n = groupNs(ps);
   const color = r.kind === "proposal" ? PROPOSAL_COLOR : (A.themeColors.get(r.theme) || PATTERN_COLOR);
+  const withCode = ps.filter((p) => { const h = hitFor(fc, p.id); return p.group === g && h && h[k].size; });
+  // Jump to the same code in another group/transition, with its count (← → also step through).
+  const switcher = el("div", { class: "cell-switch" }, ...CELLS.map(([g2, k2]) => el("button", {
+    class: g2 === g && k2 === k ? "active" : "",
+    title: cellLabel(g2, k2),
+    onclick: () => { if (!isSel(fc, k2, g2)) selectCode(fc, k2, g2); },
+  }, `${g2} ${k2 === "pp" ? "Pre→Post" : "→Delay"} `, el("span", { class: "count" }, `${counts[g2][k2]}/${n[g2][k2]}`))));
   const header = el("div", { class: "detail-head" },
     el("div", { class: "detail-title" },
-      el("span", { class: "ann-code" + (r.kind === "proposal" ? " proposal-code" : ""), style: `--strong:${color[0]};--tint:${color[1]}` }, modLabel(r.fc)),
+      el("span", { class: "ann-code" + (r.kind === "proposal" ? " proposal-code" : ""), style: `--strong:${color[0]};--tint:${color[1]}` }, modLabel(fc)),
+      el("span", { class: "trans-name" }, cellLabel(g, k)),
       el("span", { class: "where" }, r.theme || "")),
     r.description ? el("div", { class: "desc" }, r.description) : null,
-    el("div", { class: "detail-controls" },
-      coderLegend(),
-      el("div", { class: "mod-filter" }, ...[["all", "Both"], ["pp", TRANS.pp], ["pd", TRANS.pd]].map(([k, label]) =>
-        el("button", { class: k === A.trans ? "active" : "", onclick: () => { A.trans = k; renderDetail(); } }, label)))));
+    el("div", { class: "detail-controls" }, coderLegend(), switcher));
 
-  const sections = [];
-  for (const k of A.trans === "all" ? ["pp", "pd"] : [A.trans]) {
-    const withCode = ps.filter((p) => { const h = hitFor(A.code, p.id); return h && h[k].size; });
-    sections.push(el("h3", { class: "trans-title" }, TRANS[k], el("span", { class: "count" }, ` ${withCode.length} participants`)));
-    if (!withCode.length) {
-      sections.push(el("p", { class: "empty" }, "Nobody in the selection."));
-      continue;
-    }
-    for (const g of [...GROUPS, null]) {
-      const inGroup = withCode.filter((p) => (g ? p.group === g : !GROUPS.includes(p.group)));
-      if (!inGroup.length) continue;
-      sections.push(el("div", { class: "group-head" }, g ? `Group ${g}` : "Other", el("span", { class: "count" }, ` ${inGroup.length}`)));
-      sections.push(...inGroup.map((p) => codeCard(p, k)));
-    }
-  }
+  const sections = [el("div", { class: "where" }, `${withCode.length} of ${n[g][k]} group ${g} participants in the selection`)];
+  if (!withCode.length) sections.push(el("p", { class: "empty" }, "Nobody in the selection has this code here."));
+  sections.push(...withCode.map((p) => codeCard(p, k)));
   box.replaceChildren(header, ...sections);
 }
 
@@ -362,7 +425,7 @@ function coderChip(ci) {
 }
 
 /** The selected code's applications for one participant and transition kind, with their coder. */
-function applications(pid, k, fc = A.code) {
+function applications(pid, k, fc = A.sel.fc) {
   const out = [];
   A.data.coders.forEach((coder, ci) => {
     for (const a of coder.annotations) {
@@ -408,17 +471,24 @@ function notesBlock(pid, tr, here) {
   const coded = [...new Set(here.map((x) => x.ci))].sort();
   const others = A.data.coders.map((_, i) => i).filter((i) => !coded.includes(i));
   const noteFor = (ci) => ((A.data.coders[ci].notes[pid] || {})[tr] || "");
+  const excerpts = (xs) => xs.map((x) => el("div", { class: "excerpt" }, `“${x.a.text}”`));
   const row = (ci) => {
     const mine = here.filter((x) => x.ci === ci);
-    const onNote = mine.filter((x) => x.a.source === "note");
+    // A highlight belongs to the note it was made in (its field), which can differ from the
+    // transition it counts for if the coder moved the code to another transition.
+    const onThisNote = mine.filter((x) => x.a.source === "note" && x.a.field === tr);
+    const onOtherNote = mine.filter((x) => x.a.source === "note" && x.a.field !== tr);
     const text = noteFor(ci);
     const comments = mine.map((x) => x.a.comment).filter(Boolean);
     let body;
-    if (text) body = markedText(text, onNote);
-    else if (onNote.length) body = el("div", { class: "text" }, ...onNote.map((x) => el("div", { class: "excerpt" }, `“${x.a.text}”`)));
+    if (text) body = markedText(text, onThisNote);
+    else if (onThisNote.length) body = el("div", { class: "text" }, ...excerpts(onThisNote));
     else body = el("div", { class: "text empty" }, A.data.coders[ci].notes_source ? "(no note)"
       : "(this highlights file has no notes; re-save it with the coding app)");
-    return el("div", { class: "coder-note" }, coderChip(ci), body,
+    const moved = onOtherNote.length ? el("div", { class: "moved" },
+      el("span", { class: "where" }, `Highlighted in ${[...new Set(onOtherNote.map((x) => A.data.noteColumns[x.a.field] || x.a.field))].join(", ")}:`),
+      ...excerpts(onOtherNote)) : null;
+    return el("div", { class: "coder-note" }, coderChip(ci), body, moved,
       comments.length ? el("div", { class: "comment" }, comments.join(" · ")) : null);
   };
   const block = el("div", { class: "notes" }, ...coded.map(row));
@@ -452,7 +522,9 @@ function markedText(text, apps) {
     box.append(el("span", {
       class: "hl" + (cis.length > 1 ? " multi" : ""),
       style: `background:${bg};border-bottom:2px solid ${coderColor(cis[0])[0]}`,
-      title: cis.map((ci) => A.data.coders[ci].name).join(", "),
+      title: [...new Set(cover.map((x) => `${A.data.coders[x.ci].name}: ${modLabel(x.a.full_code)}` +
+        (x.a.original_code ? ` (coded as ${modLabel(x.a.original_code)})` : "") +
+        (x.a.comment ? ` (${x.a.comment})` : "")))].join("\n"),
     }, piece));
   }
   const missing = apps.length - spans.length;
@@ -460,53 +532,93 @@ function markedText(text, apps) {
   return box;
 }
 
-/** No code selected: every code each coder gave this participant, per transition. */
+/** A clickable chip for a code (opens it for that transition and the participant's group). */
+function codeButton(fc, k, group) {
+  const g = GROUPS.includes(group) ? group : GROUPS[0];
+  const r = A.rowByFc.get(fc) || {};
+  const color = r.kind === "proposal" ? PROPOSAL_COLOR : (A.themeColors.get(r.theme) || PATTERN_COLOR);
+  return el("button", {
+    class: "code-chip", style: `--strong:${color[0]};--tint:${color[1]}`,
+    title: (r.description ? r.description + "\n" : "") + `Open ${modLabel(fc)}, ${cellLabel(g, k)}`,
+    onclick: () => selectCode(fc, k, g),
+  }, modLabel(fc));
+}
+
+/**
+ * No code selected: compare the coders for one participant. A table of the codes each coder
+ * gave in each transition, then per question the original answers (with every coder's
+ * highlights) and, per transition, each coder's note with their highlights and codes.
+ */
 function participantView(pid) {
   const p = A.participants.get(pid);
   const coders = A.data.coders;
+  const mine = coders.map((c) => c.annotations.filter((a) => a.participant_id === pid));
+  const codesIn = (ci, tr) => [...new Set(mine[ci].filter((a) => a.transition === tr).map((a) => a.full_code))];
+
   const table = el("table", { class: "pcodes" },
     el("tr", {}, el("th", {}, ""), ...coders.map((_, ci) => el("th", {}, coderChip(ci)))),
     ...NOTE_ORDER.map((tr) => el("tr", {},
       el("th", {}, A.data.noteColumns[tr]),
-      ...coders.map((c) => {
-        const fcs = [...new Set(c.annotations.filter((a) => a.participant_id === pid && a.transition === tr).map((a) => a.full_code))];
-        return el("td", {}, ...fcs.map((fc) => {
-          const r = A.rowByFc.get(fc) || {};
-          const color = r.kind === "proposal" ? PROPOSAL_COLOR : (A.themeColors.get(r.theme) || PATTERN_COLOR);
-          return el("button", {
-            class: "code-chip", style: `--strong:${color[0]};--tint:${color[1]}`, title: r.description || "",
-            onclick: () => selectCode(fc),
-          }, modLabel(fc));
+      ...coders.map((_, ci) => el("td", {}, ...codesIn(ci, tr).map((fc) => codeButton(fc, tkind(tr), p.group)))))));
+
+  const sections = A.data.questions.map((q) => {
+    const times = A.data.times.filter((t) => (p.responses[q] || {})[t]);
+    const answers = el("div", { class: "answers", style: `grid-template-columns:repeat(${times.length || 1}, 1fr)` },
+      ...times.map((t) => {
+        const field = `${q}|${t}`;
+        const apps = [];
+        mine.forEach((anns, ci) => anns.forEach((a) => {
+          if (a.source === "response" && a.field === field) apps.push({ ci, a });
         }));
-      }))));
+        return el("div", { class: "answer" }, el("div", { class: "time" }, TIME_LABELS[t] || t),
+          markedText(p.responses[q][t], apps));
+      }));
+    const notes = ["pp", "pd"].map((k) => {
+      const tr = `${q}_${k}`;
+      const rows = coders.map((c, ci) => {
+        const text = (c.notes[pid] || {})[tr] || "";
+        const onNote = mine[ci].filter((a) => a.source === "note" && a.field === tr).map((a) => ({ ci, a }));
+        const fcs = codesIn(ci, tr);
+        if (!text && !fcs.length) return null;
+        const body = text ? markedText(text, onNote)
+          : el("div", { class: "text empty" }, c.notes_source ? "(no note)" : "(this highlights file has no notes)");
+        return el("div", { class: "coder-note" }, coderChip(ci),
+          el("div", {}, body, fcs.length ? el("div", { class: "note-codes" }, ...fcs.map((fc) => codeButton(fc, k, p.group))) : null));
+      }).filter(Boolean);
+      if (!rows.length) return null;
+      return el("div", { class: "pv-trans" }, el("div", { class: "time" }, A.data.noteColumns[tr]), ...rows);
+    }).filter(Boolean);
+    return el("div", { class: "card" }, el("div", { class: "card-q" }, q), answers, ...notes);
+  });
+
   return el("div", {},
-    el("div", { class: "detail-head" }, el("div", { class: "detail-title" }, el("strong", {}, p.id),
-      el("span", { class: "where" }, ` ${p.site}, group ${p.group || "?"}`))),
-    el("p", { class: "where" }, "Codes given by each coder. Click one to see its quotes."),
-    table);
+    el("div", { class: "detail-head" },
+      el("div", { class: "detail-title" }, el("strong", {}, p.id), el("span", { class: "where" }, ` ${p.site}, group ${p.group || "?"}`)),
+      el("div", { class: "detail-controls" }, coderLegend())),
+    el("p", { class: "where" }, "Codes given by each coder. Click a code to see all its quotes."),
+    table, ...sections);
 }
 
 // ------------------------------------------------------------ summary
 
-const summaryEdit = { fc: null, textarea: null, timer: null };
+// The summary being edited: which code, transition and group it belongs to.
+const summaryEdit = { fc: null, k: null, g: null, theme: "", textarea: null, stamp: null, timer: null };
 
 function renderSummary() {
   const box = $("#summary");
   if (!A.data) { box.replaceChildren(); return; }
-  const written = A.rows.filter((r) => (A.data.summaries[r.fc] || {}).summary);
-  const list = el("details", { class: "summary-list", ...(A.code ? {} : { open: "" }) },
-    el("summary", {}, `Summaries written (${written.length})`),
-    el("ul", {}, ...written.map((r) => el("li", { class: r.fc === A.code ? "current" : "", onclick: () => selectCode(r.fc) },
-      el("strong", {}, modLabel(r.fc)), " ",
-      el("span", { class: "snippet" }, A.data.summaries[r.fc].summary)))));
-  if (!A.code) {
+  if (!A.sel) {
     summaryEdit.fc = summaryEdit.textarea = null;
-    box.replaceChildren(el("h2", {}, "Code summary"), el("p", { class: "empty" }, "Select a code to write its summary."), list);
+    box.replaceChildren(el("h2", {}, "Code summary"),
+      el("p", { class: "empty" }, "Select one of a code's numbers to write its summary for that group and transition."));
     return;
   }
-  const r = A.rowByFc.get(A.code);
-  const saved = A.data.summaries[A.code] || {};
-  const ta = el("textarea", { id: "summary-text", placeholder: `What does ${modLabel(A.code)} look like in the data? How do A and B differ?` });
+  const { fc, k, g } = A.sel;
+  const saved = summaryOf(fc, k, g);
+  const ta = el("textarea", {
+    id: "summary-text",
+    placeholder: `What does ${modLabel(fc)} look like for group ${g} in ${TRANS[k]}?`,
+  });
   ta.value = saved.summary || "";
   const stamp = el("div", { class: "where", id: "summary-stamp" }, saved.updated_at ? `Saved ${saved.updated_at.replace("T", " ")}` : "");
   ta.addEventListener("input", () => {
@@ -515,33 +627,41 @@ function renderSummary() {
     stamp.textContent = "Editing…";
   });
   ta.addEventListener("blur", flushSummary);
-  summaryEdit.fc = A.code;
-  summaryEdit.theme = r.theme || "";
-  summaryEdit.textarea = ta;
-  summaryEdit.stamp = stamp;
-  box.replaceChildren(el("h2", {}, "Code summary: ", el("span", { class: "code-label" }, modLabel(A.code))),
-    countsLine(), ta, stamp, list);
+  Object.assign(summaryEdit, { fc, k, g, theme: A.rowByFc.get(fc).theme || "", textarea: ta, stamp });
+  // The other group's summary for the same code and transition, to compare against.
+  const og = GROUPS.find((x) => x !== g);
+  const otherText = summaryText(fc, k, og);
+  box.replaceChildren(
+    el("h2", {}, "Code summary: ", el("span", { class: "code-label" }, modLabel(fc))),
+    el("div", { class: "trans-name" }, cellLabel(g, k)),
+    countsLine(), ta, stamp);
+  if (otherText) {
+    box.append(el("details", { class: "other-summary" },
+      el("summary", {}, `Group ${og} summary (same transition)`),
+      el("div", { class: "text" }, otherText),
+      el("button", { class: "switch-trans", onclick: () => selectCode(fc, k, og) }, `Edit group ${og}`)));
+  }
 }
 
-/** Counts for the selected code in words, so they can be copied into the summary. */
+/** Counts for the selected code, transition and group in words, to copy into the summary. */
 function countsLine() {
+  const { fc, k, g } = A.sel;
   const ps = filteredParticipants();
-  const n = groupNs(ps), c = codeCounts(A.code, ps);
-  const part = (k) => `${TRANS[k]}: A ${c.A[k]}/${n.A[k]}, B ${c.B[k]}/${n.B[k]}`;
-  return el("div", { class: "counts-line" }, part("pp"), el("br"), part("pd"));
+  const n = groupNs(ps)[g][k], c = codeCounts(fc, ps)[g][k];
+  return el("div", { class: "counts-line" }, `${c}/${n} group ${g} participants` + (n ? ` (${Math.round((100 * c) / n)}%)` : ""));
 }
 
 async function flushSummary() {
   clearTimeout(summaryEdit.timer);
   summaryEdit.timer = null;
-  const { fc, textarea } = summaryEdit;
+  const { fc, k, g, theme, textarea } = summaryEdit;
   if (!fc || !textarea) return;
   const value = textarea.value;
-  if (((A.data.summaries[fc] || {}).summary || "") === value) return;
+  if (summaryText(fc, k, g) === value) return;
   try {
-    const saved = await api("POST", "/api/analysis/summary", { code: fc, theme: summaryEdit.theme, summary: value });
+    const saved = await api("POST", "/api/analysis/summary", { code: fc, transition: k, group: g, theme, summary: value });
     A.data.summaries[fc] = saved;
-    if (summaryEdit.fc === fc) summaryEdit.stamp.textContent = `Saved ${saved.updated_at.replace("T", " ")}`;
+    if (isSel(fc, k, g)) summaryEdit.stamp.textContent = `Saved ${saved[k][g].updated_at.replace("T", " ")}`;
     renderCodeTable();
   } catch (e) {
     setStatus("Failed to save summary: " + e.message, true);
@@ -550,18 +670,26 @@ async function flushSummary() {
 
 // ------------------------------------------------------------ events
 
-/** ↑/↓ (or k/j) step through the visible codes when not typing. */
+/** When not typing: ↑/↓ (or k/j) move between visible codes, ←/→ move between the four numbers. */
 function onKey(ev) {
   if (!A.data || ev.target.closest("input, textarea, select")) return;
+  const [g, k] = A.sel ? [A.sel.g, A.sel.k] : CELLS[0];
+  if ((ev.key === "ArrowLeft" || ev.key === "ArrowRight") && A.sel) {
+    ev.preventDefault();
+    const i = CELLS.findIndex(([g2, k2]) => g2 === g && k2 === k);
+    const [ng, nk] = CELLS[Math.max(0, Math.min(CELLS.length - 1, i + (ev.key === "ArrowLeft" ? -1 : 1)))];
+    if (!isSel(A.sel.fc, nk, ng)) selectCode(A.sel.fc, nk, ng);
+    return;
+  }
   const dir = { ArrowDown: 1, j: 1, ArrowUp: -1, k: -1 }[ev.key];
   if (!dir) return;
-  const rows = [...document.querySelectorAll(".code-tr")];
-  if (!rows.length) return;
+  const fcs = [...document.querySelectorAll(".code-tr")].map((r) => r.dataset.fc);
+  if (!fcs.length) return;
   ev.preventDefault();
-  const i = rows.findIndex((r) => r.classList.contains("selected"));
-  const next = rows[Math.max(0, Math.min(rows.length - 1, i === -1 ? 0 : i + dir))];
-  next.click();
-  next.scrollIntoView({ block: "nearest" });
+  const i = A.sel ? fcs.indexOf(A.sel.fc) : -1;
+  const next = fcs[Math.max(0, Math.min(fcs.length - 1, i === -1 ? 0 : i + dir))];
+  if (!isSel(next, k, g)) selectCode(next, k, g);
+  requestAnimationFrame(() => document.querySelector(`.code-tr[data-fc="${CSS.escape(next)}"]`)?.scrollIntoView({ block: "nearest" }));
 }
 
 function bindEvents() {
@@ -571,19 +699,28 @@ function bindEvents() {
   addBrowseButton(f.summary, "the code summary JSON", true);
   $("#add-coder").addEventListener("click", () => addCoderField().focus());
   $("#load-form").addEventListener("submit", onLoad);
-  const onFilter = () => { renderParticipants(); renderCodeTable(); renderDetail(); if (A.code) $("#summary .counts-line")?.replaceWith(countsLine()); };
+  const onFilter = () => { renderParticipants(); renderCodeTable(); renderDetail(); if (A.sel) $("#summary .counts-line")?.replaceWith(countsLine()); };
   $("#filter-site").addEventListener("change", onFilter);
   $("#filter-search").addEventListener("input", onFilter);
   document.querySelectorAll(".group-filter input").forEach((i) => i.addEventListener("change", onFilter));
   $("#hide-unused").addEventListener("change", renderCodeTable);
+  const showNumMode = () => document.querySelectorAll("#num-mode button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.mode === A.numMode));
+  document.querySelectorAll("#num-mode button").forEach((b) => b.addEventListener("click", () => {
+    A.numMode = b.dataset.mode;
+    localStorage.setItem("prf-num-mode", A.numMode);
+    showNumMode();
+    renderCodeTable();
+  }));
+  showNumMode();
   $("#code-search").addEventListener("input", renderCodeTable);
   document.addEventListener("keydown", onKey);
   // An async fetch may not finish while the page unloads; a beacon does.
   window.addEventListener("beforeunload", () => {
-    const { fc, textarea, theme } = summaryEdit;
-    if (!fc || !textarea || ((A.data.summaries[fc] || {}).summary || "") === textarea.value) return;
+    const { fc, k, g, textarea, theme } = summaryEdit;
+    if (!fc || !textarea || summaryText(fc, k, g) === textarea.value) return;
     navigator.sendBeacon("/api/analysis/summary", new Blob(
-      [JSON.stringify({ code: fc, theme, summary: textarea.value })], { type: "application/json" }));
+      [JSON.stringify({ code: fc, transition: k, group: g, theme, summary: textarea.value })], { type: "application/json" }));
   });
 }
 

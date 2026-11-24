@@ -625,9 +625,17 @@ def save_all():
 # ---------------------------------------------------------------- analysis page
 #
 # A separate, read-only view over several coders' highlights JSON files (see spec.txt,
-# ANALYSIS MODE). The only thing it writes is code_summary.json: one summary per code.
+# ANALYSIS MODE). The only thing it writes is code_summary.json: one summary per code,
+# transition (pre->post, pre/post->delay-post) and group (A, B).
 
 ANALYSIS_SESSION_FILE = Path.home() / ".prf_open_analysis_session.json"
+
+# Codes merged into another code on the analysis page: old code name -> new code name.
+# The modifier is kept (+overfitting -> +overfitting-underfitting); a code merged into a pattern
+# code loses it. Display only: the coders' highlights files are not changed.
+CODE_MERGES = {
+    "overfitting": "overfitting-underfitting",
+}
 SUMMARY_VERSION = 1
 
 astate = {
@@ -635,8 +643,13 @@ astate = {
     "participants": {},
     "codebook": [],
     "coders": [],      # [{name, path, notes_path, notes, annotations}]
-    "summaries": {},   # full_code ("+training", "return-to-pre") -> {summary, theme, updated_at}
+    # full_code ("+training", "return-to-pre") ->
+    #   {"theme": str, "pp"/"pd": {"A"/"B": {summary, updated_at}}}
+    "summaries": {},
 }
+# A code summary is written per transition (as labelled in code_summary.json) and group.
+SUMMARY_TRANSITIONS = {"pp": "pre->post", "pd": "pre/post->delay-post"}
+SUMMARY_GROUPS = ("A", "B")
 
 
 def coder_notes_path(highlights_path, files):
@@ -658,13 +671,27 @@ def parse_summaries(path):
     with open(path, encoding="utf-8") as f:
         doc = json.load(f)
     raw = doc.get("summaries", {}) if isinstance(doc, dict) else {}
+
+    def one(s):
+        return {"summary": s.get("summary", ""), "updated_at": s.get("updated_at", "")}
+
     out = {}
     for code, v in raw.items():
-        if isinstance(v, str):
-            v = {"summary": v}
-        if isinstance(v, dict):
-            out[code] = {"summary": v.get("summary", ""), "theme": v.get("theme", ""),
-                         "updated_at": v.get("updated_at", "")}
+        if not isinstance(v, dict):
+            continue
+        entry = {"theme": v.get("theme", "")}
+        # Earlier formats had no groups: copy such a summary to both groups so nothing is lost.
+        if "summary" in v:  # one summary per code: kept as pre->post
+            entry["pp"] = {g: one(v) for g in SUMMARY_GROUPS}
+        for k, label in SUMMARY_TRANSITIONS.items():
+            t = v.get(label)
+            if not isinstance(t, dict):
+                continue
+            if "summary" in t:  # one summary per code and transition
+                entry[k] = {g: one(t) for g in SUMMARY_GROUPS}
+            else:
+                entry[k] = {g: one(t[g]) for g in SUMMARY_GROUPS if isinstance(t.get(g), dict)}
+        out[code] = entry
     return out
 
 
@@ -672,6 +699,16 @@ def write_summaries():
     path = astate["paths"]["summary"]
     if not path:
         raise ValueError("No code summary path set")
+    summaries = {}
+    for code, entry in sorted(astate["summaries"].items()):
+        # Empty summaries are dropped; sorted so diffs stay readable.
+        written = {}
+        for k, label in SUMMARY_TRANSITIONS.items():
+            groups = {g: s for g, s in sorted(entry.get(k, {}).items()) if s["summary"].strip()}
+            if groups:
+                written[label] = groups
+        if written:
+            summaries[code] = {"theme": entry.get("theme", ""), **written}
     doc = {
         "version": SUMMARY_VERSION,
         "saved_at": datetime.now().isoformat(timespec="seconds"),
@@ -680,8 +717,7 @@ def write_summaries():
             "codebook": astate["paths"]["codebook"],
             "highlights": [c["path"] for c in astate["coders"]],
         },
-        # Codes with an empty summary are dropped; sorted so diffs stay readable.
-        "summaries": {k: v for k, v in sorted(astate["summaries"].items()) if v["summary"].strip()},
+        "summaries": summaries,
     }
     atomic_write(path, lambda f: json.dump(doc, f, indent=2, ensure_ascii=False))
 
@@ -693,6 +729,7 @@ def analysis_snapshot():
         "codebook": astate["codebook"],
         "coders": astate["coders"],
         "summaries": astate["summaries"],
+        "codeMerges": CODE_MERGES,
         "questions": QUESTIONS,
         "times": TIMES,
         "noteColumns": NOTE_COLUMNS,
@@ -772,14 +809,14 @@ def analysis_load():
 def analysis_save_summary():
     body = request.get_json(force=True)
     code = (body.get("code") or "").strip()
-    if not code:
-        return jsonify({"error": "missing code"}), 400
+    trans, group = body.get("transition"), body.get("group")
+    if not code or trans not in SUMMARY_TRANSITIONS or group not in SUMMARY_GROUPS:
+        return jsonify({"error": "missing code, or bad transition or group"}), 400
     previous = astate["summaries"].get(code)
-    astate["summaries"][code] = {
-        "summary": body.get("summary", ""),
-        "theme": body.get("theme", ""),
-        "updated_at": datetime.now().isoformat(timespec="seconds"),
-    }
+    entry = {**(previous or {}), "theme": body.get("theme", "") or (previous or {}).get("theme", "")}
+    entry[trans] = {**entry.get(trans, {}), group: {
+        "summary": body.get("summary", ""), "updated_at": datetime.now().isoformat(timespec="seconds")}}
+    astate["summaries"][code] = entry
     try:
         write_summaries()
     except (OSError, ValueError) as e:
@@ -788,7 +825,7 @@ def analysis_save_summary():
         else:
             astate["summaries"][code] = previous
         return jsonify({"error": str(e)}), 500
-    return jsonify(astate["summaries"][code])
+    return jsonify(entry)
 
 
 if __name__ == "__main__":

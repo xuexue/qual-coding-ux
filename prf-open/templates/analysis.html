@@ -40,7 +40,12 @@
     <section id="a-codes" class="col">
       <div class="codes-head">
         <h2>Codes</h2>
-        <label class="small"><input type="checkbox" id="hide-unused" checked> hide unused</label>
+        <span class="codes-opts">
+          <span class="seg" id="num-mode" title="Show each number as a count or as a % of the group's n">
+            <button type="button" data-mode="count">count</button><button type="button" data-mode="pct">%</button>
+          </span>
+          <label class="small"><input type="checkbox" id="hide-unused" checked> hide unused</label>
+        </span>
       </div>
       <input id="code-search" placeholder="Filter codes…">
       <div id="code-table"></div>
