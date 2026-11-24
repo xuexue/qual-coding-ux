@@ -115,16 +115,36 @@ SITE1-A-01, +training;+building, =training, +societal-impact, return-to-pre
    specific highlights corresponding to each code occurrence. This json file should
    be loadable alongside the various csv files to resume coding.
 
-
-
 ANALYSIS MODE
 
-There should be another mode that lets me click on a code, and see all the IDS (left)
-where the code appears, either as a +/-/=. This is both for verification (I may want to make
-further edits) AND for analysis (I want to better-understand the way the code appears).
-In this mode, I also want to see the number of times a code appeared in a group.
-The filtering functionality should still be active, i.e., I may still want to only
-select a certain site/group: I will want to see the number of times appeared in the selection
-(not globally overall)
+The analysis mode should be a separate page. In this mode, we will still
+need the data file, codebookfile, but we will also need to be able to
+add additional highlight json files from **different coders**.
+All these files will be in the same format as `*_highlights.json`.
+You will also need another file path to write to: `code_summary.json`.
+
+For each participant/time, merge the codes from the different coders. That is,
+a participant/time is considered being assigned a code if there is *at least*
+one coder that gave it that code.
+
+For the analysis mode, I would like to see:
+
+- On the left, the participant list. When filtered, I would like to see the 
+  "A" and "B" separately (sort order). I would still like the site filter
+  and group A/B checkbox filter, and the search.
+- Next to the left-most column, I would like to see the list of codes.
+  One line per code, grouped by the tentative "theme" in the codebook file.
+  Next to each code, I would like to see the number of "A" and "B"s within
+  the selected participants that is given the code in the pre->post and pre/post->delay-post. There should be four numbers here in each row.
+  (Also add a heading row that shows the $n$ in each group --- this will not be
+  the same number for pre->post and ->Delay-post since not all participants
+  completed the delay-post)
+- Clicking on a code should populate the rest of the screen on the right.
+  I should be able to easily see the original quotes, and the way that
+  each coder highlighted the user. I'm not quite sure how to design this screen
+  so that it is easy to be able to write summaries of the codes.
+- On the far right there should be a "code summary" textbox. 
+  This is for a researcher to write down the summary for the code.
+
 
 
